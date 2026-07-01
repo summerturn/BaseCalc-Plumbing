@@ -28,7 +28,7 @@ export type AppColors = {
   textMuted: string;
   textFaint: string;
 
-  // Brand (live-wire amber)
+  // Brand (Plumbing water blue) — token names kept as `amber*` for cross-app parity
   amber: string;
   amberBright: string;
   amberSoft: string;
@@ -75,10 +75,10 @@ const dark: AppColors = {
   textDim: '#C5CDD8',
   textMuted: '#A8B0BC',
   textFaint: '#7A8491',
-  amber: '#F59E0B',
-  amberBright: '#FFB020',
-  amberSoft: 'rgba(245,158,11,0.14)',
-  onAmber: '#0A0C11',
+  amber: '#0EA5E9',
+  amberBright: '#38BDF8',
+  amberSoft: 'rgba(56,189,248,0.14)',
+  onAmber: '#04121C',
   pass: '#34D399',
   passBg: 'rgba(52,211,153,0.12)',
   passBorder: 'rgba(52,211,153,0.32)',

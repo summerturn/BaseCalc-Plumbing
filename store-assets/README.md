@@ -8,14 +8,14 @@ Everything needed to fill out the App Store Connect listing for BaseCalc Plumbin
 store-assets/
 ├── screenshots/        ← 10 images, 1284 × 2778  (iPhone 6.5"/6.7")
 │   ├── 01-dashboard.png
-│   ├── 02-pipe-sizing.png   (PASS/FAIL hero)
-│   ├── 03-pressure-drop.png
-│   ├── 04-water-pressure.png
+│   ├── 02-pipe-sizing.png
+│   ├── 03-pressure-drop.png   (PASS/FAIL hero)
+│   ├── 04-drainage.png
 │   ├── 05-jobs.png
 │   ├── 06-worksheet.png
 │   ├── 07-materials.png
 │   ├── 08-water-heater.png
-│   ├── 09-drainage-sizing.png
+│   ├── 09-gas-pipe.png
 │   └── 10-history.png
 ├── screenshots-ipad/   ← same 10 screens, 2048 × 2732  (iPad 13")
 └── seed/basecalc-seed.json   ← sample data baked into the screenshots

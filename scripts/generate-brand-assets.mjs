@@ -1,6 +1,8 @@
 // Generates BaseCalc Plumbing brand assets (icon, splash, adaptive icons, grid
 // tiles, glow, logo lockups). Build-time only (devDependency `sharp`).
-// Design: a premium BaseCalc "BC" monogram with a plumbing water-drop mark.
+// Design: the BaseCalc "Measured Current" instrument vibe — a dark precision
+// field with a blueprint grid and a single living accent — retuned for
+// plumbing: a glassy water-drop mark in water-blue in place of the AC waveform.
 // Run: node scripts/generate-brand-assets.mjs
 import sharp from 'sharp';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +13,11 @@ const ROOT = join(__dirname, '..');
 const ASSETS = join(ROOT, 'assets');
 const SAIRA_BLACK = join(ROOT, 'node_modules/@expo-google-fonts/saira/900Black/Saira_900Black.ttf');
 const SAIRA_BOLD = join(ROOT, 'node_modules/@expo-google-fonts/saira/700Bold/Saira_700Bold.ttf');
+
+// ── Brand accent (Plumbing: water blue) ─────────────────────────────────
+const BRAND = '#38BDF8';       // bright sky/water blue — the living accent
+const BRAND_DEEP = '#0284C7';  // deep water blue — gradient floor
+const BRAND_ICE = '#E0F2FE';   // ice highlight — gradient ceiling
 
 function fontCss() {
   return `
@@ -26,24 +33,20 @@ function gridLines(canvas, step, color) {
   return lines;
 }
 
-const BRAND_BLUE = '#38BDF8';
-const BRAND_BLUE_DEEP = '#0EA5E9';
-const BRAND_TEAL = '#2DD4BF';
-
 const DEFS = `
   <style>${fontCss()}</style>
   <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#182032"/><stop offset="0.48" stop-color="#0B0F18"/><stop offset="1" stop-color="#05070B"/>
+    <stop offset="0" stop-color="#172435"/><stop offset="0.48" stop-color="#0A111B"/><stop offset="1" stop-color="#05080C"/>
   </linearGradient>
   <radialGradient id="glow" cx="0.54" cy="0.34" r="0.66">
-    <stop offset="0" stop-color="${BRAND_BLUE}" stop-opacity="0.46"/><stop offset="0.48" stop-color="${BRAND_BLUE_DEEP}" stop-opacity="0.12"/><stop offset="1" stop-color="${BRAND_BLUE_DEEP}" stop-opacity="0"/>
+    <stop offset="0" stop-color="${BRAND}" stop-opacity="0.46"/><stop offset="0.48" stop-color="${BRAND_DEEP}" stop-opacity="0.12"/><stop offset="1" stop-color="${BRAND_DEEP}" stop-opacity="0"/>
   </radialGradient>
-  <linearGradient id="brand" x1="0.18" y1="0" x2="0.82" y2="1">
-    <stop offset="0" stop-color="#BAE6FD"/><stop offset="0.45" stop-color="${BRAND_BLUE}"/><stop offset="1" stop-color="${BRAND_BLUE_DEEP}"/>
+  <linearGradient id="brand" x1="0.22" y1="0.04" x2="0.74" y2="1">
+    <stop offset="0" stop-color="${BRAND_ICE}"/><stop offset="0.42" stop-color="${BRAND}"/><stop offset="1" stop-color="${BRAND_DEEP}"/>
   </linearGradient>
-  <linearGradient id="white" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#C8D1DE"/>
-  </linearGradient>
+  <radialGradient id="hl" cx="0.5" cy="0.5" r="0.5">
+    <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.92"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+  </radialGradient>
   <radialGradient id="vignette" cx="0.5" cy="0.44" r="0.78">
     <stop offset="0.60" stop-color="#000000" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.42"/>
   </radialGradient>
@@ -51,18 +54,27 @@ const DEFS = `
     <feDropShadow dx="0" dy="22" stdDeviation="26" flood-color="#000000" flood-opacity="0.42"/>
   </filter>`;
 
-// Plumbing water-drop mark — a stylized drop with a pipe stem and ripple.
+// Water-drop mark — a glassy teardrop with a specular highlight and a faint
+// surface ripple beneath. The single living accent on the dark precision field.
 function monogram(S, { mono = false } = {}) {
   const scale = S / 1024;
   const tx = (value) => (value * scale).toFixed(2);
   const fill = mono ? '#FFFFFF' : 'url(#brand)';
-  const outline = mono ? '#FFFFFF' : '#E0F2FE';
+  const rim = mono ? 'none' : 'rgba(224,242,254,0.55)';
+
+  // Teardrop: pointed apex at top, bulging to a near-circle at the bottom.
+  const drop = `M${tx(512)} ${tx(214)} C${tx(512)} ${tx(214)} ${tx(330)} ${tx(470)} ${tx(330)} ${tx(566)} C${tx(330)} ${tx(668)} ${tx(411)} ${tx(760)} ${tx(512)} ${tx(760)} C${tx(613)} ${tx(760)} ${tx(694)} ${tx(668)} ${tx(694)} ${tx(566)} C${tx(694)} ${tx(470)} ${tx(512)} ${tx(214)} ${tx(512)} ${tx(214)} Z`;
+
+  const highlight = mono ? '' :
+    `<ellipse cx="${tx(452)}" cy="${tx(556)}" rx="${tx(52)}" ry="${tx(96)}" fill="url(#hl)" opacity="0.55" transform="rotate(-22 ${tx(452)} ${tx(556)})"/>`;
+  const ripple = mono ? '' :
+    `<path d="M${tx(372)} ${tx(812)} C${tx(430)} ${tx(842)} ${tx(594)} ${tx(842)} ${tx(652)} ${tx(812)}" fill="none" stroke="rgba(56,189,248,0.45)" stroke-width="${tx(13)}" stroke-linecap="round"/>
+     <path d="M${tx(322)} ${tx(786)} C${tx(404)} ${tx(826)} ${tx(620)} ${tx(826)} ${tx(702)} ${tx(786)}" fill="none" stroke="rgba(56,189,248,0.22)" stroke-width="${tx(10)}" stroke-linecap="round"/>`;
 
   return `<g filter="${mono ? '' : 'url(#softShadow)'}">
-    <path d="M${tx(512)} ${tx(220)} C${tx(512)} ${tx(220)} ${tx(340)} ${tx(420)} ${tx(340)} ${tx(540)} C${tx(340)} ${tx(670)} ${tx(414)} ${tx(760)} ${tx(512)} ${tx(760)} C${tx(610)} ${tx(760)} ${tx(684)} ${tx(670)} ${tx(684)} ${tx(540)} C${tx(684)} ${tx(420)} ${tx(512)} ${tx(220)} ${tx(512)} ${tx(220)} Z" fill="${fill}" stroke="${outline}" stroke-width="${tx(24)}" stroke-linejoin="round"/>
-    <path d="M${tx(512)} ${tx(420)} L${tx(512)} ${tx(620)}" stroke="${outline}" stroke-width="${tx(20)}" stroke-linecap="round"/>
-    <circle cx="${tx(512)}" cy="${tx(500)}" r="${tx(34)}" fill="${outline}"/>
-    <path d="M${tx(420)} ${tx(660)} C${tx(460)} ${tx(700)} ${tx(564)} ${tx(700)} ${tx(604)} ${tx(660)}" fill="none" stroke="${outline}" stroke-width="${tx(16)}" stroke-linecap="round" opacity="0.6"/>
+    ${ripple}
+    <path d="${drop}" fill="${fill}" stroke="${rim}" stroke-width="${mono ? 0 : tx(6)}" stroke-linejoin="round"/>
+    ${highlight}
   </g>`;
 }
 
@@ -93,7 +105,7 @@ const monoFgSVG = (S) => `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" h
 
 const adaptiveBgSVG = (S) => `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#161B28"/><stop offset="1" stop-color="#0A0C11"/></linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#13202E"/><stop offset="1" stop-color="#080D14"/></linearGradient>
   </defs>
   <rect width="${S}" height="${S}" fill="url(#bg)"/>
   <g opacity="0.5">${gridLines(S, S / 8, 'rgba(255,255,255,0.05)')}</g>
@@ -106,7 +118,7 @@ const gridTileSVG = (color) => `<svg xmlns="http://www.w3.org/2000/svg" width="3
 const glowSVG = (S) => `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}">
   <defs>
     <radialGradient id="g" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="${BRAND_BLUE}" stop-opacity="0.85"/><stop offset="0.55" stop-color="${BRAND_TEAL}" stop-opacity="0.22"/><stop offset="1" stop-color="${BRAND_TEAL}" stop-opacity="0"/>
+      <stop offset="0" stop-color="${BRAND}" stop-opacity="0.85"/><stop offset="0.55" stop-color="${BRAND_DEEP}" stop-opacity="0.22"/><stop offset="1" stop-color="${BRAND_DEEP}" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <rect width="${S}" height="${S}" fill="url(#g)"/>
@@ -133,7 +145,7 @@ function logoLockupSVG({ dark }) {
     <defs>${DEFS}</defs>
     <g transform="translate(32 96)">${stripSvg(logoTileSVG(328))}</g>
     <text x="418" y="238" fill="${fg}" font-size="150" font-weight="900" font-family="SairaIcon, Arial Black, Arial, sans-serif">BASE</text>
-    <text x="902" y="238" fill="${BRAND_BLUE}" font-size="150" font-weight="900" font-family="SairaIcon, Arial Black, Arial, sans-serif">CALC</text>
+    <text x="902" y="238" fill="${BRAND}" font-size="150" font-weight="900" font-family="SairaIcon, Arial Black, Arial, sans-serif">CALC</text>
     <text x="424" y="324" fill="${sub}" font-size="52" font-weight="700" font-family="SairaIcon, Arial, sans-serif" letter-spacing="6">PLUMBING</text>
   </svg>`;
 }
@@ -146,12 +158,12 @@ const render = (svg, file, { flatten } = {}) => {
 };
 
 await Promise.all([
-  render(iconSVG(1024), 'icon.png', { flatten: '#0A0C11' }),
+  render(iconSVG(1024), 'icon.png', { flatten: '#080D14' }),
   render(splashSVG(1024), 'splash-icon.png'),
   render(adaptiveFgSVG(1024), 'android-icon-foreground.png'),
   render(monoFgSVG(1024), 'android-icon-monochrome.png'),
   render(adaptiveBgSVG(1024), 'android-icon-background.png'),
-  render(iconSVG(64), 'favicon.png', { flatten: '#0A0C11' }),
+  render(iconSVG(64), 'favicon.png', { flatten: '#080D14' }),
   render(gridTileSVG('rgba(255,255,255,0.05)'), 'grid-dark.png'),
   render(gridTileSVG('rgba(13,16,23,0.055)'), 'grid-light.png'),
   render(glowSVG(512), 'glow-amber.png'),
