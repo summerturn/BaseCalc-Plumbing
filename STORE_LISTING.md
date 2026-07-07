@@ -1,29 +1,29 @@
-# BaseCalc Plumbing — Store Listing Copy
+# BaseCalc Plumbing Calculator — Store Listing Copy
 
-Source of truth for App Store Connect and Google Play listing text. Values mirror `store.config.json` where supported. Last optimized for ASO: 2026-06-27.
+Source of truth for App Store Connect and Google Play listing text. Values mirror `store.config.json` where supported. Last optimized for ASO: 2026-07-06.
 
 ## Positioning
 
-- **Brand:** BaseCalc Plumbing
+- **Brand:** BaseCalc Plumbing Calculator
 - **Bundle/package:** `com.basemapped.basecalcplumbing`
-- **One-liner:** Run plumbing math on site, save job worksheets, finish billing in SpeakSheet.
+- **One-liner:** Run plumbing calculator math on site, save job worksheets, finish billing in SpeakSheet.
 - **Audience:** Plumbing technicians, installers, service contractors, estimators, and building operators.
-- **Primary search intent:** plumbing calculator, pipe sizing, pressure drop, drainage, vent, water heater, gas pipe, pump head, fixture units, septic tank.
+- **Primary search intent:** plumbing calculator, pipe sizing calculator, pressure drop calculator, drainage calculator, vent calculator, water heater calculator, gas pipe calculator, pump head, fixture units, septic tank.
 - **Differentiator:** 18 field calculators plus local job records, materials planning, job worksheet PDFs, and a clean SpeakSheet handoff.
 
 ## Apple App Store
 
 | Field | Value | Count / Limit |
 |---|---|---|
-| **Title** | `BaseCalc Plumbing` | 17 / 30 |
-| **Subtitle** | `Plumbing Calculator & Tools` | 27 / 30 |
-| **Keywords** | `plumbing,calculator,pipe,sizing,pressure,drainage,vent,water,heater,gas,pump,septic,fixtures` | 95 / 100 |
-| **Promotional Text** | `18 plumbing field calculators with saved history, materials planning, job records, and worksheet PDF export.` | 116 / 170 |
+| **Title** | `BaseCalc Plumbing Calculator` | 28 / 30 |
+| **Subtitle** | `Pipe Sizing Calculator` | 22 / 30 |
+| **Keywords** | `plumbing,calculator,pipe,sizing,pressure,drop,drainage,vent,water,heater,gas,pump,septic,fixture` | 96 / 100 |
+| **Promotional Text** | `Plumbing calculator for field math: pipe sizing, pressure drop, drainage, water heater, gas pipe, saved history, worksheets, and materials.` | 139 / 170 |
 
 **Description**
 
 ```
-BaseCalc Plumbing gives technicians fast field calculators and clean job workflow tools in one app. Run the math on site, save the result, build a job worksheet, and send final billing through SpeakSheet when the job is ready.
+BaseCalc Plumbing Calculator is a plumbing calculator for field math, worksheets, materials, and saved calculation history. Run pipe sizing, pressure drop, drainage, vent sizing, water heater, gas pipe, pump head, fixture unit, septic, and other plumbing calculator checks on site, then save the result for the job.
 
 18 CALCULATORS FOR DAILY FIELD WORK
 • Pipe Velocity — velocity from GPM and nominal pipe size.
@@ -70,15 +70,15 @@ BaseCalc Plumbing is a professional reference tool. Always verify against curren
 **Release notes**
 
 ```
-Initial release of BaseCalc Plumbing with 18 plumbing field calculators, saved local history, materials planning, worksheet PDF export, SpeakSheet handoff, and device-local offline storage.
+Initial release of BaseCalc Plumbing Calculator with 18 plumbing field calculators, saved local history, materials planning, worksheet PDF export, SpeakSheet handoff, and device-local offline storage.
 ```
 
 **Categories:** Primary `Utilities`, Secondary `Business`.
 
 ## Google Play
 
-- **App name:** `BaseCalc Plumbing`
-- **Short description:** `Plumbing calculators, job history, and worksheets.`
+- **App name:** `BaseCalc Plumbing Calculator`
+- **Short description:** `Plumbing calculator for pipe sizing, pressure, drainage, gas, and worksheets.`
 - **Full description:** use the Apple description above. Google indexes title, short description, and full description, so keep the 18 calculator names visible.
 
 ## Launch Declarations

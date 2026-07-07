@@ -37,13 +37,15 @@
       "ios": {
         "appleId": "summerlyn@basemapped.com",
         "ascAppId": "6786117253",
+        "appleTeamId": "MBLL9MNBLD",
         "language": "en-US",
         "sku": "basecalc-plumbing-ios-001"
       },
       "android": {
         "serviceAccountKeyPath": "./deploy/google-play-service-account.json",
         "track": "internal",
-        "releaseStatus": "completed"
+        "releaseStatus": "draft",
+        "changesNotSentForReview": true
       }
     }
   }

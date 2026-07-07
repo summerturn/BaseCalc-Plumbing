@@ -45,7 +45,7 @@ const baseExpoConfig = {
   owner: 'basemapped-llc',
   extra: {
     eas: {
-      projectId: 'b35e59dc-0958-4812-91ab-3989379dd94c',
+      projectId: '4a036a42-e953-434d-afd1-4c06c504fdd5',
     },
   },
 };

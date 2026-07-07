@@ -1,5 +1,5 @@
 import { type ComponentProps, useState } from 'react';
-import { Image, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import {
@@ -48,27 +48,28 @@ type CalcDef = {
   code: string;
   route: string;
   color: string;
+  proOnly?: boolean;
 };
 
 const CALCS: CalcDef[] = [
   { key: 'pipe-velocity', title: 'Pipe Velocity', subtitle: 'Velocity from GPM', icon: 'water-drop', code: 'V = GPM ÷ A', route: 'PipeVelocity', color: CATEGORY.water },
   { key: 'flow-rate', title: 'Flow Rate', subtitle: 'GPM from velocity', icon: 'opacity', code: 'GPM = V × A', route: 'FlowRate', color: CATEGORY.water },
-  { key: 'pipe-sizing', title: 'Pipe Sizing', subtitle: 'Size from GPM & velocity', icon: 'line-weight', code: 'Area = GPM ÷ V', route: 'PipeSizing', color: CATEGORY.water },
-  { key: 'pressure-drop', title: 'Pressure Drop', subtitle: 'Hazen-Williams', icon: 'trending-down', code: 'psi/ft', route: 'PressureDrop', color: CATEGORY.pressure },
-  { key: 'drainage', title: 'Drainage Sizing', subtitle: 'Fixture units → pipe', icon: 'remove-circle-outline', code: 'IPC drain', route: 'DrainageSizing', color: CATEGORY.drainage },
-  { key: 'vent', title: 'Vent Sizing', subtitle: 'FU + length → vent', icon: 'vertical-align-top', code: 'IPC vent', route: 'VentSizing', color: CATEGORY.drainage },
-  { key: 'water-heater', title: 'Water Heater', subtitle: 'First-hour rating', icon: 'bathtub', code: 'FHR', route: 'WaterHeater', color: CATEGORY.heating },
-  { key: 'gas-pipe', title: 'Gas Pipe Sizing', subtitle: 'BTU/hr + length', icon: 'local-fire-department', code: 'Iron pipe', route: 'GasPipeSizing', color: CATEGORY.gas },
-  { key: 'pump-head', title: 'Pump Head', subtitle: 'Total dynamic head', icon: 'arrow-upward', code: 'TDH', route: 'PumpHead', color: CATEGORY.pressure },
   { key: 'pipe-volume', title: 'Pipe Volume', subtitle: 'Gallons in pipe', icon: 'invert-colors', code: 'Gal = area × L', route: 'PipeVolume', color: CATEGORY.water },
   { key: 'water-pressure', title: 'Water Pressure', subtitle: 'Head ↔ psi', icon: 'compress', code: '1 psi = 2.31 ft', route: 'WaterPressure', color: CATEGORY.pressure },
-  { key: 'expansion', title: 'Pipe Expansion', subtitle: 'Thermal ΔL', icon: 'unfold-more', code: 'ΔL', route: 'PipeExpansion', color: CATEGORY.general },
-  { key: 'fixture-units', title: 'Fixture Units', subtitle: 'Count fixtures', icon: 'countertops', code: 'FU total', route: 'FixtureUnits', color: CATEGORY.fixtures },
-  { key: 'meter', title: 'Water Meter Sizing', subtitle: 'FU → meter', icon: 'speed', code: 'Meter size', route: 'WaterMeterSizing', color: CATEGORY.water },
-  { key: 'irrigation', title: 'Irrigation Flow', subtitle: 'Zone GPM', icon: 'grass', code: 'Heads × GPM', route: 'IrrigationFlow', color: CATEGORY.irrigation },
-  { key: 'septic', title: 'Septic Tank', subtitle: 'Bedrooms → tank', icon: 'home', code: 'Min gallons', route: 'SepticTank', color: CATEGORY.drainage },
-  { key: 'grease', title: 'Grease Interceptor', subtitle: 'Size by FU/GPM', icon: 'oil-barrel', code: 'Interceptor', route: 'GreaseInterceptor', color: CATEGORY.drainage },
-  { key: 'backflow', title: 'Backflow Pressure', subtitle: 'Pressure loss', icon: 'tune', code: 'ΔP device', route: 'BackflowPressure', color: CATEGORY.pressure },
+  { key: 'pipe-sizing', title: 'Pipe Sizing', subtitle: 'Size from GPM & velocity', icon: 'line-weight', code: 'Area = GPM ÷ V', route: 'PipeSizing', color: CATEGORY.water, proOnly: true },
+  { key: 'pressure-drop', title: 'Pressure Drop', subtitle: 'Hazen-Williams', icon: 'trending-down', code: 'psi/ft', route: 'PressureDrop', color: CATEGORY.pressure, proOnly: true },
+  { key: 'drainage', title: 'Drainage Sizing', subtitle: 'Fixture units → pipe', icon: 'remove-circle-outline', code: 'IPC drain', route: 'DrainageSizing', color: CATEGORY.drainage, proOnly: true },
+  { key: 'vent', title: 'Vent Sizing', subtitle: 'FU + length → vent', icon: 'vertical-align-top', code: 'IPC vent', route: 'VentSizing', color: CATEGORY.drainage, proOnly: true },
+  { key: 'water-heater', title: 'Water Heater', subtitle: 'First-hour rating', icon: 'bathtub', code: 'FHR', route: 'WaterHeater', color: CATEGORY.heating, proOnly: true },
+  { key: 'gas-pipe', title: 'Gas Pipe Sizing', subtitle: 'BTU/hr + length', icon: 'local-fire-department', code: 'Iron pipe', route: 'GasPipeSizing', color: CATEGORY.gas, proOnly: true },
+  { key: 'pump-head', title: 'Pump Head', subtitle: 'Total dynamic head', icon: 'arrow-upward', code: 'TDH', route: 'PumpHead', color: CATEGORY.pressure, proOnly: true },
+  { key: 'expansion', title: 'Pipe Expansion', subtitle: 'Thermal ΔL', icon: 'unfold-more', code: 'ΔL', route: 'PipeExpansion', color: CATEGORY.general, proOnly: true },
+  { key: 'fixture-units', title: 'Fixture Units', subtitle: 'Count fixtures', icon: 'countertops', code: 'FU total', route: 'FixtureUnits', color: CATEGORY.fixtures, proOnly: true },
+  { key: 'meter', title: 'Water Meter Sizing', subtitle: 'FU → meter', icon: 'speed', code: 'Meter size', route: 'WaterMeterSizing', color: CATEGORY.water, proOnly: true },
+  { key: 'irrigation', title: 'Irrigation Flow', subtitle: 'Zone GPM', icon: 'grass', code: 'Heads × GPM', route: 'IrrigationFlow', color: CATEGORY.irrigation, proOnly: true },
+  { key: 'septic', title: 'Septic Tank', subtitle: 'Bedrooms → tank', icon: 'home', code: 'Min gallons', route: 'SepticTank', color: CATEGORY.drainage, proOnly: true },
+  { key: 'grease', title: 'Grease Interceptor', subtitle: 'Size by FU/GPM', icon: 'oil-barrel', code: 'Interceptor', route: 'GreaseInterceptor', color: CATEGORY.drainage, proOnly: true },
+  { key: 'backflow', title: 'Backflow Pressure', subtitle: 'Pressure loss', icon: 'tune', code: 'ΔP device', route: 'BackflowPressure', color: CATEGORY.pressure, proOnly: true },
 ];
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -87,6 +88,7 @@ function CalcCard({
   large,
   cardWidth,
   cardHeight,
+  locked,
 }: {
   calc: CalcDef;
   featured?: boolean;
@@ -95,9 +97,12 @@ function CalcCard({
   large?: boolean;
   cardWidth: number;
   cardHeight?: number;
+  locked?: boolean;
 }) {
   const c = useColors();
   const contentColumnWidth = Math.max(96, Math.min(cardWidth - 28, large ? 170 : compact ? 118 : 136));
+  const showProText = Boolean(locked && !compact && cardWidth >= 176);
+  const badgeSide = compact ? 26 : 28;
   const base = {
     backgroundColor: c.panel,
     borderColor: c.border,
@@ -176,6 +181,31 @@ function CalcCard({
           </Label>
         </View>
       </View>
+      {locked ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: compact ? 7 : 10,
+            right: compact ? 7 : 10,
+            width: showProText ? undefined : badgeSide,
+            minWidth: showProText ? undefined : badgeSide,
+            height: showProText ? undefined : badgeSide,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: showProText ? 4 : 0,
+            backgroundColor: c.amberSoft,
+            borderColor: withAlpha(c.amberBright, 0.55),
+            borderWidth: 1,
+            borderRadius: 999,
+            paddingHorizontal: showProText ? 8 : 0,
+            paddingVertical: showProText ? 4 : 0,
+          }}
+        >
+          <MaterialIcons name="lock" size={showProText ? 12 : 14} color={c.amberBright} />
+          {showProText ? <Label tone="amber" style={{ fontSize: 10 }}>PRO</Label> : null}
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -231,6 +261,7 @@ function BrandLockup({ compact }: { compact: boolean }) {
 
 export function CalculatorDashboardScreen({ navigation }: { navigation: { navigate: (s: string) => void } }) {
   const c = useColors();
+  const { isPro } = useAppStore();
   const { width } = useWindowDimensions();
   const bottomClearance = useBottomClearance();
   const isTablet = width >= TABLET_BREAKPOINT;
@@ -245,6 +276,20 @@ export function CalculatorDashboardScreen({ navigation }: { navigation: { naviga
   const rawCardHeight = Math.round(cardWidth * (isTablet ? 1.03 : compact ? 1.18 : 1.12));
   const cardHeight = Math.max(compact ? 168 : 176, Math.min(isTablet ? 230 : 214, rawCardHeight));
   const rows = chunk(CALCS, columns);
+  const openCalculator = (calc: CalcDef) => {
+    if (calc.proOnly && !isPro) {
+      Alert.alert(
+        'Pro calculator',
+        `${calc.title} is part of BaseCalc Plumbing Pro. Upgrade to unlock every plumbing calculator.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Upgrade', onPress: () => navigation.navigate('Paywall') },
+        ]
+      );
+      return;
+    }
+    navigation.navigate(calc.route);
+  };
 
   return (
     <Screen>
@@ -303,7 +348,8 @@ export function CalculatorDashboardScreen({ navigation }: { navigation: { naviga
                       large={isTablet}
                       cardWidth={cardWidth}
                       cardHeight={cardHeight}
-                      onPress={() => navigation.navigate(calc.route)}
+                      locked={Boolean(calc.proOnly && !isPro)}
+                      onPress={() => openCalculator(calc)}
                     />
                   </View>
                 ))}

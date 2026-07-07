@@ -2,15 +2,15 @@
 
 ## App Name
 
-BaseCalc Plumbing
+BaseCalc Plumbing Calculator
 
 ## Short Description
 
-Plumbing calculators, worksheets, and field math.
+Plumbing calculator for pipe sizing, pressure, drainage, gas, and worksheets.
 
 ## Full Description
 
-BaseCalc Plumbing gives technicians fast field calculators and clean job workflow tools in one app. Run the math on site, save the result, build a job worksheet, and send final billing through SpeakSheet when the job is ready.
+BaseCalc Plumbing Calculator is a plumbing calculator for field math, worksheets, materials, and saved calculation history. Run pipe sizing, pressure drop, drainage, vent sizing, water heater, gas pipe, pump head, fixture unit, septic, and other plumbing calculator checks on site, then save the result for the job.
 
 18 CALCULATORS FOR DAILY FIELD WORK
 - Pipe Velocity: velocity from GPM and nominal pipe size.

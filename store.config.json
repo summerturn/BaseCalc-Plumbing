@@ -4,16 +4,17 @@
     "version": "1.0.0",
     "info": {
       "en-US": {
-        "title": "BaseCalc Plumbing",
-        "subtitle": "Plumbing Calculator & Tools",
-        "promoText": "18 plumbing field calculators with saved history, materials planning, job records, and worksheet PDF export.",
-        "description": "BaseCalc Plumbing gives technicians fast field calculators and clean job workflow tools in one app. Run the math on site, save the result, build a job worksheet, and send final billing through SpeakSheet when the job is ready.\n\n18 CALCULATORS FOR DAILY FIELD WORK\n• Pipe Velocity — velocity from GPM and nominal pipe size.\n• Flow Rate — GPM from velocity and nominal pipe size.\n• Pipe Sizing — minimum pipe size from GPM and max velocity.\n• Pressure Drop — Hazen-Williams pressure loss.\n• Drainage Sizing — fixture units to minimum drainage pipe diameter.\n• Vent Sizing — fixture units plus vent length to minimum vent diameter.\n• Water Heater — first-hour rating and recovery estimate.\n• Gas Pipe Sizing — BTU/hr and length to minimum gas pipe size.\n• Pump Head — total dynamic head from lift, friction, and pressure.\n• Pipe Volume — gallons of water in a given length of pipe.\n• Water Pressure — pressure and head conversion.\n• Pipe Expansion — thermal expansion length change.\n• Fixture Units — count common fixtures to total fixture units.\n• Water Meter Sizing — fixture units to meter size.\n• Irrigation Flow — zone GPM from heads and GPM per head.\n• Septic Tank — bedrooms and daily flow to minimum tank volume.\n• Grease Interceptor — fixture units or GPM to interceptor size.\n• Backflow Pressure — pressure loss across backflow preventer.\n\nEVERY RESULT IS EXPLAINED\n• Clear sizing messages and pass/fail where applicable.\n• The governing limit, final answer, and calculation breakdown.\n• Saved local history so you keep a job-site record.\n\nJOB RECORDS, MATERIALS, AND WORKSHEETS\n• Save job contacts with site notes.\n• Build job worksheets with scope, quantities, and site notes.\n• Export worksheet PDFs for internal handoff or customer context.\n• Plan common pull-list items before rough-in, service, and closeout.\n• Send the finished billing handoff to SpeakSheet for the final invoice.\n\nDEVICE-LOCAL FOR THE FIELD\n• Works offline by default.\n• No BaseCalc account or cloud sync.\n• Job contact, worksheet, setting, and calculation data stays on this device, protected by your device security.\n• There is no BaseCalc cloud option.\n• Dark and light themes with a high-contrast job-site interface.\n\nBaseCalc Plumbing is a professional reference tool. Always verify against current industry standards, manufacturer data, and local codes. The authority having jurisdiction has the final say.",
+        "title": "BaseCalc Plumbing Calculator",
+        "subtitle": "Pipe Sizing Calculator",
+        "promoText": "Plumbing calculator for field math: pipe sizing, pressure drop, drainage, water heater, gas pipe, saved history, worksheets, and materials.",
+        "description": "BaseCalc Plumbing Calculator is a plumbing calculator for field math, worksheets, materials, and saved calculation history. Run pipe sizing, pressure drop, drainage, vent sizing, water heater, gas pipe, pump head, fixture unit, septic, and other plumbing calculator checks on site, then save the result for the job.\n\n18 CALCULATORS FOR DAILY FIELD WORK\n• Pipe Velocity — velocity from GPM and nominal pipe size.\n• Flow Rate — GPM from velocity and nominal pipe size.\n• Pipe Sizing — minimum pipe size from GPM and max velocity.\n• Pressure Drop — Hazen-Williams pressure loss.\n• Drainage Sizing — fixture units to minimum drainage pipe diameter.\n• Vent Sizing — fixture units plus vent length to minimum vent diameter.\n• Water Heater — first-hour rating and recovery estimate.\n• Gas Pipe Sizing — BTU/hr and length to minimum gas pipe size.\n• Pump Head — total dynamic head from lift, friction, and pressure.\n• Pipe Volume — gallons of water in a given length of pipe.\n• Water Pressure — pressure and head conversion.\n• Pipe Expansion — thermal expansion length change.\n• Fixture Units — count common fixtures to total fixture units.\n• Water Meter Sizing — fixture units to meter size.\n• Irrigation Flow — zone GPM from heads and GPM per head.\n• Septic Tank — bedrooms and daily flow to minimum tank volume.\n• Grease Interceptor — fixture units or GPM to interceptor size.\n• Backflow Pressure — pressure loss across backflow preventer.\n\nEVERY RESULT IS EXPLAINED\n• Clear sizing messages and pass/fail where applicable.\n• The governing limit, final answer, and calculation breakdown.\n• Saved local history so you keep a job-site record.\n\nJOB RECORDS, MATERIALS, AND WORKSHEETS\n• Save job contacts with site notes.\n• Build job worksheets with scope, quantities, and site notes.\n• Export worksheet PDFs for internal handoff or customer context.\n• Plan common pull-list items before rough-in, service, and closeout.\n• Send the finished billing handoff to SpeakSheet for the final invoice.\n\nDEVICE-LOCAL FOR THE FIELD\n• Works offline by default.\n• No BaseCalc account or cloud sync.\n• Job contact, worksheet, setting, and calculation data stays on this device, protected by your device security.\n• There is no BaseCalc cloud option.\n• Dark and light themes with a high-contrast job-site interface.\n\nBaseCalc Plumbing is a professional reference tool. Always verify against current industry standards, manufacturer data, and local codes. The authority having jurisdiction has the final say.",
         "keywords": [
           "plumbing",
           "calculator",
           "pipe",
           "sizing",
           "pressure",
+          "drop",
           "drainage",
           "vent",
           "water",
@@ -21,9 +22,9 @@
           "gas",
           "pump",
           "septic",
-          "fixtures"
+          "fixture"
         ],
-        "releaseNotes": "Initial release of BaseCalc Plumbing with 18 plumbing field calculators, saved local history, materials planning, worksheet PDF export, SpeakSheet handoff, and device-local offline storage.",
+        "releaseNotes": "Initial release of BaseCalc Plumbing Calculator with 18 plumbing field calculators, saved local history, materials planning, worksheet PDF export, SpeakSheet handoff, and device-local offline storage.",
         "marketingUrl": "https://basemapped.com/products/basecalc-plumbing",
         "supportUrl": "https://basemapped.com/basecalc-plumbing/support",
         "privacyPolicyUrl": "https://basemapped.com/basecalc-plumbing/privacy-policy"
