@@ -84,12 +84,7 @@ const mi = (name, size, color) => `<span style="font-family:'MI';font-size:${siz
 
 // ── Shared screen pieces ────────────────────────────────────────────────
 function statusBar() {
-  return `<div style="height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 30px 0 34px">
-    <div style="font-family:${DISP};font-weight:700;font-size:17px;color:${T.text};letter-spacing:.3px">9:41</div>
-    <div style="display:flex;align-items:center;gap:7px">
-      ${mi('signal_cellular_alt', 17, T.text)}${mi('wifi', 17, T.text)}${mi('battery_full', 19, T.text)}
-    </div>
-  </div>`;
+  return '<div aria-hidden="true" style="height:54px"></div>';
 }
 const TABS = [
   { ic: 'water_drop', label: 'Calculators', key: 'calc' },
@@ -405,8 +400,8 @@ html,body{width:${D.W}px;height:${D.H}px;overflow:hidden}
 const SHOTS = [
   { out: '01-dashboard.png', body: dashboard, active: 'calc', line1: 'Run the math.', line2: 'In the field.', sub: 'Plumbing calculators built for the trade.' },
   { out: '02-pipe-sizing.png', body: pipeSizing, active: 'calc', line1: 'Size the', line2: 'pipe.', sub: 'Diameter from flow and velocity, any material.' },
-  { out: '03-pressure-drop.png', body: pressureDrop, active: 'calc', line1: 'Pass or fail,', line2: 'instantly.', sub: 'Friction loss with a clear pressure check.' },
-  { out: '04-drainage.png', body: drainageSizing, active: 'calc', line1: 'Drain and', line2: 'vent, sized.', sub: 'Fixture units to pipe size by code.' },
+  { out: '03-pressure-drop.png', body: pressureDrop, active: 'calc', line1: 'Calculate pressure', line2: 'drop.', sub: 'Friction loss from entered flow, pipe, and run data.' },
+  { out: '04-drainage.png', body: drainageSizing, active: 'calc', line1: 'Check drainage', line2: 'size.', sub: 'Supported fixture-unit inputs mapped to a pipe-size result.' },
   { out: '05-jobs.png', body: jobs, active: 'jobs', line1: 'Save job', line2: 'worksheets.', sub: 'Scope, quantities, and notes stay in BaseCalc.' },
   { out: '06-worksheet.png', body: worksheetDetail, active: 'jobs', line1: 'Handoff without', line2: 'invoicing.', sub: 'Send final billing work to SpeakSheet.' },
   { out: '07-materials.png', body: materials, active: 'mat', line1: 'Plan the', line2: 'truck stock.', sub: 'Material reminders before the install.' },

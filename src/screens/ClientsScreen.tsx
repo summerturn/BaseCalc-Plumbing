@@ -27,7 +27,6 @@ import {
   SecondaryButton,
   useBottomClearance,
 } from '../components/ui';
-import { FooterAdBanner } from '../components/AdBanner';
 import { useSubscription } from '../hooks/useSubscription';
 
 // ─── List ────────────────────────────────────────────────────────────
@@ -125,7 +124,6 @@ export function ClientsScreen({ navigation }: { navigation: any }) {
             </Pressable>
           ))
         )}
-        <FooterAdBanner />
       </ListScreenScrollView>
       <FAB onPress={() => { if (canAddClient()) navigation.navigate('AddClient'); }} />
     </Screen>
@@ -145,7 +143,7 @@ function ClientForm({
   title: string;
   initial: ClientFields;
   submitLabel: string;
-  onSubmit: (f: ClientFields) => void;
+  onSubmit: (f: ClientFields) => boolean;
 }) {
   const navigation = useNavigation();
   const bottomClearance = useBottomClearance();
@@ -156,8 +154,7 @@ function ClientForm({
       Alert.alert('Name required', 'Please enter a job contact name.');
       return;
     }
-    onSubmit(form);
-    navigation.goBack();
+    if (onSubmit(form)) navigation.goBack();
   };
 
   return (
@@ -181,12 +178,17 @@ function ClientForm({
 
 export function AddClientScreen() {
   const { addClient } = useAppStore();
+  const { showLimitPrompt } = useSubscription();
   return (
     <ClientForm
       title="New Job Contact"
       submitLabel="Save contact"
       initial={{ name: '', email: '', phone: '', address: '', company: '', notes: '' }}
-      onSubmit={(f) => addClient(f)}
+      onSubmit={(fields) => {
+        const added = addClient(fields);
+        if (!added) showLimitPrompt('client');
+        return added;
+      }}
     />
   );
 }
@@ -211,7 +213,10 @@ export function EditClientScreen({ route }: { route: any }) {
       title="Edit Job Contact"
       submitLabel="Update contact"
       initial={{ name: client.name, email: client.email, phone: client.phone, address: client.address, company: client.company, notes: client.notes }}
-      onSubmit={(f) => updateClient(clientId, f)}
+      onSubmit={(fields) => {
+        updateClient(clientId, fields);
+        return true;
+      }}
     />
   );
 }
@@ -225,6 +230,7 @@ export function ClientDetailScreen({ route, navigation }: { route: any; navigati
   const bottomClearance = useBottomClearance();
   const client = getClientById(clientId);
   const jobs = client ? getClientJobs(clientId) : [];
+  const { canAddInvoice } = useSubscription();
 
   if (!client) {
     return (
@@ -276,7 +282,14 @@ export function ClientDetailScreen({ route, navigation }: { route: any; navigati
         </Panel>
 
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 22 }}>
-          <SecondaryButton label="New worksheet" icon="work-outline" tint={c.amberBright} onPress={() => navigation.navigate('CreateJobTicket', { clientId })} />
+          <SecondaryButton
+            label="New worksheet"
+            icon="work-outline"
+            tint={c.amberBright}
+            onPress={() => {
+              if (canAddInvoice()) navigation.navigate('CreateJobTicket', { clientId });
+            }}
+          />
           <SecondaryButton label="Edit" icon="edit" onPress={() => navigation.navigate('EditClient', { clientId })} />
         </View>
 

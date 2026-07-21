@@ -4,6 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SQLite from 'expo-sqlite';
 import { DEFAULT_THEME_MODE, ThemeMode } from '../theme/appTheme';
 import { isRevenueCatConfigured } from '../lib/config';
+import { canCreateClientForPlan, canCreateInvoiceForPlan } from '../lib/accessControl';
+import { InvoiceService } from '../services/InvoiceService';
 import { SubscriptionService } from '../services/SubscriptionService';
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -73,8 +75,8 @@ export interface CalculationRecord {
     | 'septicTank'
     | 'greaseInterceptor'
     | 'backflowPressure';
-  inputs: Record<string, any>;
-  result: Record<string, any>;
+  inputs: object;
+  result: object;
   createdAt: string;
   synced: boolean;
 }
@@ -104,7 +106,8 @@ export interface AppState {
 
   // Clients
   clients: Client[];
-  addClient: (client: Omit<Client, 'id' | 'createdAt' | 'updatedAt' | 'synced'>) => void;
+  canAddClient: () => boolean;
+  addClient: (client: Omit<Client, 'id' | 'createdAt' | 'updatedAt' | 'synced'>) => boolean;
   updateClient: (id: string, updates: Partial<Client>) => void;
   deleteClient: (id: string) => void;
   getClientById: (id: string) => Client | undefined;
@@ -112,7 +115,8 @@ export interface AppState {
 
   // Invoices
   invoices: Invoice[];
-  addInvoice: (invoice: Omit<Invoice, 'id' | 'createdAt' | 'updatedAt' | 'synced'>) => void;
+  canAddInvoice: () => boolean;
+  addInvoice: (invoice: Omit<Invoice, 'id' | 'createdAt' | 'updatedAt' | 'synced'>) => boolean;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
   deleteInvoice: (id: string) => void;
   getInvoiceById: (id: string) => Invoice | undefined;
@@ -134,11 +138,19 @@ export interface AppState {
   setOnline: (online: boolean) => void;
   sync: () => Promise<void>;
   pendingSyncCount: () => number;
+  deleteAllLocalData: () => Promise<boolean>;
 
   // RevenueCat
   isPro: boolean;
+  proLastVerifiedAt: number | null;
   setPro: (pro: boolean) => void;
   refreshProStatus: () => Promise<void>;
+}
+
+const PRO_OFFLINE_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function migratePersistedState(persistedState: unknown): unknown {
@@ -146,11 +158,24 @@ function migratePersistedState(persistedState: unknown): unknown {
     return persistedState;
   }
 
-  const state = persistedState as { themeMode?: ThemeMode };
-  return {
+  const state = persistedState as Record<string, unknown>;
+  const verifiedAt = typeof state.proLastVerifiedAt === 'number' && Number.isFinite(state.proLastVerifiedAt)
+    ? state.proLastVerifiedAt
+    : null;
+  const verificationAge = verifiedAt === null ? Number.POSITIVE_INFINITY : Date.now() - verifiedAt;
+  const migrated: Record<string, unknown> = {
     ...state,
-    themeMode: state.themeMode === 'system' || !state.themeMode ? DEFAULT_THEME_MODE : state.themeMode,
+    clients: Array.isArray(state.clients) ? state.clients.filter(isRecord) : [],
+    invoices: Array.isArray(state.invoices)
+      ? state.invoices.filter((invoice) => isRecord(invoice) && Array.isArray(invoice.lineItems))
+      : [],
+    calculations: Array.isArray(state.calculations) ? state.calculations.filter(isRecord) : [],
+    themeMode: state.themeMode === 'light' || state.themeMode === 'dark' ? state.themeMode : DEFAULT_THEME_MODE,
+    isPro: state.isPro === true && verificationAge >= 0 && verificationAge <= PRO_OFFLINE_GRACE_MS,
+    proLastVerifiedAt: verifiedAt,
   };
+  if (!isRecord(state.company)) delete migrated.company;
+  return migrated;
 }
 
 // ─── SQLite Setup (for offline persistence) ──────────────────────────
@@ -158,6 +183,22 @@ function migratePersistedState(persistedState: unknown): unknown {
 const APP_STORAGE_NAME = 'basecalc-plumbing-storage';
 const LEGACY_STORAGE_NAMES = ['nexduit-storage', 'tradecalc-storage', 'watthawk-storage', 'sparkcalc-storage'] as const;
 const DATABASE_NAME = 'tradecalc.db';
+
+export const DEFAULT_COMPANY_SETTINGS: Readonly<CompanySettings> = {
+  name: 'My Plumbing Company',
+  address: '',
+  city: '',
+  state: '',
+  zip: '',
+  phone: '',
+  email: '',
+  taxRate: 0,
+  paymentTerms: 'Create the final invoice in SpeakSheet.',
+};
+
+function defaultCompanySettings(): CompanySettings {
+  return { ...DEFAULT_COMPANY_SETTINGS };
+}
 
 const appStorage = {
   getItem: async (name: string) => {
@@ -168,6 +209,9 @@ const appStorage = {
       const legacyValue = await AsyncStorage.getItem(legacyStorageName);
       if (legacyValue === null) continue;
       await AsyncStorage.setItem(APP_STORAGE_NAME, legacyValue);
+      for (const staleStorageName of LEGACY_STORAGE_NAMES) {
+        await AsyncStorage.removeItem(staleStorageName);
+      }
       return legacyValue;
     }
     return null;
@@ -184,6 +228,7 @@ const appStorage = {
 };
 
 let db: SQLite.SQLiteDatabase | null = null;
+let proStatusGeneration = 0;
 
 async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (db) return db;
@@ -266,26 +311,20 @@ export const useAppStore = create<AppState>()(
       clients: [],
       invoices: [],
       calculations: [],
-      company: {
-        name: 'My Plumbing Company',
-        address: '',
-        city: '',
-        state: '',
-        zip: '',
-        phone: '',
-        email: '',
-        taxRate: 0,
-        paymentTerms: 'Create the final invoice in SpeakSheet.',
-      },
+      company: defaultCompanySettings(),
       themeMode: DEFAULT_THEME_MODE,
       isOnline: true,
       pendingDeletes: emptyPendingDeletes(),
       isPro: false,
+      proLastVerifiedAt: null,
 
       setThemeMode: (mode) => set({ themeMode: mode }),
 
       // ─── Client Actions ───
+      canAddClient: () => canCreateClientForPlan(get().isPro, get().clients.length),
+
       addClient: (clientData) => {
+        if (!get().canAddClient()) return false;
         const client: Client = {
           ...clientData,
           id: `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -294,7 +333,8 @@ export const useAppStore = create<AppState>()(
           synced: false,
         };
         set((state) => ({ clients: [...state.clients, client] }));
-        get().sync();
+        void get().sync();
+        return true;
       },
 
       updateClient: (id, updates) => {
@@ -305,13 +345,17 @@ export const useAppStore = create<AppState>()(
               : c
           ),
         }));
-        get().sync();
+        void get().sync();
       },
 
       deleteClient: (id) => {
         const state = get();
         const invoiceIds = state.invoices.filter((i) => i.clientId === id).map((i) => i.id);
         const calculationIds = state.calculations.filter((c) => c.clientId === id).map((c) => c.id);
+        const pdfPaths = state.invoices
+          .filter((invoice) => invoice.clientId === id)
+          .map((invoice) => invoice.pdfPath)
+          .filter((path): path is string => Boolean(path));
 
         set((state) => ({
           clients: state.clients.filter((c) => c.id !== id),
@@ -323,7 +367,8 @@ export const useAppStore = create<AppState>()(
             calculations: calculationIds,
           }),
         }));
-        get().sync();
+        pdfPaths.forEach((path) => void InvoiceService.deletePDF(path));
+        void get().sync();
       },
 
       getClientById: (id) => {
@@ -339,7 +384,13 @@ export const useAppStore = create<AppState>()(
       },
 
       // ─── Invoice Actions ───
+      canAddInvoice: () => {
+        const activeInvoiceCount = get().invoices.filter((invoice) => invoice.status !== 'paid').length;
+        return canCreateInvoiceForPlan(get().isPro, activeInvoiceCount);
+      },
+
       addInvoice: (invoiceData) => {
+        if (!get().canAddInvoice()) return false;
         const invoice: Invoice = {
           ...invoiceData,
           id: `inv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -348,7 +399,8 @@ export const useAppStore = create<AppState>()(
           synced: false,
         };
         set((state) => ({ invoices: [...state.invoices, invoice] }));
-        get().sync();
+        void get().sync();
+        return true;
       },
 
       updateInvoice: (id, updates) => {
@@ -359,15 +411,17 @@ export const useAppStore = create<AppState>()(
               : i
           ),
         }));
-        get().sync();
+        void get().sync();
       },
 
       deleteInvoice: (id) => {
+        const pdfPath = get().invoices.find((invoice) => invoice.id === id)?.pdfPath;
         set((state) => ({
           invoices: state.invoices.filter((i) => i.id !== id),
           pendingDeletes: mergePendingDeletes(state.pendingDeletes, { invoices: [id] }),
         }));
-        get().sync();
+        if (pdfPath) void InvoiceService.deletePDF(pdfPath);
+        void get().sync();
       },
 
       getInvoiceById: (id) => {
@@ -381,11 +435,23 @@ export const useAppStore = create<AppState>()(
       },
 
       generateInvoiceNumber: () => {
-        const count = get().invoices.length + 1;
         const date = new Date();
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
-        return `JOB-${year}${month}-${String(count).padStart(4, '0')}`;
+        const period = `${year}${month}`;
+        const usedNumbers = new Set(get().invoices.map((invoice) => invoice.invoiceNumber));
+        let nextSequence = get().invoices.reduce((max, invoice) => {
+          const match = invoice.invoiceNumber.match(new RegExp(`^(?:JOB|INV)-${period}-(\\d+)$`));
+          if (!match) return max;
+          const sequence = Number(match[1]);
+          return Number.isFinite(sequence) ? Math.max(max, sequence) : max;
+        }, 0) + 1;
+        let candidate = `JOB-${period}-${String(nextSequence).padStart(4, '0')}`;
+        while (usedNumbers.has(candidate)) {
+          nextSequence += 1;
+          candidate = `JOB-${period}-${String(nextSequence).padStart(4, '0')}`;
+        }
+        return candidate;
       },
 
       // ─── Calculation Actions ───
@@ -397,7 +463,7 @@ export const useAppStore = create<AppState>()(
           synced: false,
         };
         set((state) => ({ calculations: [...state.calculations, calc] }));
-        get().sync();
+        void get().sync();
       },
 
       deleteCalculation: (id) => {
@@ -405,7 +471,7 @@ export const useAppStore = create<AppState>()(
           calculations: state.calculations.filter((c) => c.id !== id),
           pendingDeletes: mergePendingDeletes(state.pendingDeletes, { calculations: [id] }),
         }));
-        get().sync();
+        void get().sync();
       },
 
       // ─── Company Actions ───
@@ -413,14 +479,14 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           company: { ...state.company, ...updates },
         }));
-        get().sync();
+        void get().sync();
       },
 
       // ─── Offline/Sync Actions ───
       setOnline: (online) => {
         set({ isOnline: online });
         if (online) {
-          get().sync();
+          void get().sync();
         }
       },
 
@@ -433,21 +499,74 @@ export const useAppStore = create<AppState>()(
         return 0;
       },
 
+      deleteAllLocalData: async () => {
+        const pdfPaths = get().invoices
+          .map((invoice) => invoice.pdfPath)
+          .filter((path): path is string => Boolean(path));
+        let complete = true;
+
+        const pdfResults = await Promise.all(pdfPaths.map((path) => InvoiceService.deletePDF(path)));
+        if (pdfResults.some((deleted) => !deleted)) complete = false;
+
+        try {
+          if (db) {
+            await db.closeAsync();
+            db = null;
+          }
+          await SQLite.deleteDatabaseAsync(DATABASE_NAME);
+        } catch (error) {
+          complete = false;
+          console.error('[Privacy] Legacy database cleanup failed:', error);
+        }
+
+        try {
+          await appStorage.removeItem(APP_STORAGE_NAME);
+        } catch (error) {
+          complete = false;
+          console.error('[Privacy] Local storage cleanup failed:', error);
+        }
+
+        set({
+          clients: [],
+          invoices: [],
+          calculations: [],
+          company: defaultCompanySettings(),
+          pendingDeletes: emptyPendingDeletes(),
+        });
+        return complete;
+      },
+
       // ─── RevenueCat ───
       setPro: (pro) => {
-        set({ isPro: pro });
+        proStatusGeneration += 1;
+        set({ isPro: pro, proLastVerifiedAt: Date.now() });
       },
 
       refreshProStatus: async () => {
-        const pro = isRevenueCatConfigured()
-          ? await SubscriptionService.checkStatus().catch(() => false)
-          : false;
-        set({ isPro: pro });
+        const generation = ++proStatusGeneration;
+        if (!isRevenueCatConfigured()) {
+          if (generation === proStatusGeneration) set({ isPro: false, proLastVerifiedAt: Date.now() });
+          return;
+        }
+
+        try {
+          const isPro = await SubscriptionService.checkStatus({ forceRefresh: true });
+          if (generation === proStatusGeneration) set({ isPro, proLastVerifiedAt: Date.now() });
+        } catch (error) {
+          const state = get();
+          const age = state.proLastVerifiedAt === null
+            ? Number.POSITIVE_INFINITY
+            : Date.now() - state.proLastVerifiedAt;
+          if (generation === proStatusGeneration && !(state.isPro && age >= 0 && age <= PRO_OFFLINE_GRACE_MS)) {
+            set({ isPro: false });
+          }
+          console.error('[RevenueCat] entitlement refresh failed:', error);
+        }
       },
     }),
     {
       name: APP_STORAGE_NAME,
-      version: 1,
+      version: 3,
       storage: createJSONStorage(() => appStorage),
       migrate: migratePersistedState,
       partialize: (state) => ({
@@ -456,12 +575,11 @@ export const useAppStore = create<AppState>()(
         calculations: state.calculations,
         themeMode: state.themeMode,
         company: state.company,
-        // Pro status is intentionally NOT persisted locally. It is always
-        // re-verified via RevenueCat on startup to prevent tampered local
-        // storage from unlocking Pro features.
+        isPro: state.isPro,
+        proLastVerifiedAt: state.proLastVerifiedAt,
       }),
       onRehydrateStorage: () => (state) => {
-        state?.refreshProStatus();
+        if (state) void state.refreshProStatus();
       },
     }
   )

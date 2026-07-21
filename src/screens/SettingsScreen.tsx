@@ -1,5 +1,5 @@
 import { type ComponentProps, useState } from 'react';
-import { Pressable, View, useWindowDimensions } from 'react-native';
+import { Alert, Pressable, View, useWindowDimensions } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
 import { useAppStore } from '../store/useAppStore';
@@ -14,11 +14,11 @@ import {
   Panel,
   PrimaryButton,
   Screen,
+  SecondaryButton,
   SECTION_GAP,
   useBottomClearance,
   withAlpha,
 } from '../components/ui';
-import { FooterAdBanner } from '../components/AdBanner';
 
 type IconName = ComponentProps<typeof MaterialIcons>['name'];
 
@@ -39,19 +39,48 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export function SettingsScreen() {
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
-  const { company, updateCompany, isPro } = useAppStore();
+  const { company, updateCompany, isPro, deleteAllLocalData } = useAppStore();
   const { themeMode, setThemeMode } = useAppTheme();
   const c = useColors();
   const { width } = useWindowDimensions();
   const bottomClearance = useBottomClearance();
   const [form, setForm] = useState({ ...company });
   const [saved, setSaved] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const stackLocationFields = width < 360;
 
   const handleSave = () => {
     updateCompany(form);
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
+  };
+
+  const confirmDeleteAllData = () => {
+    Alert.alert(
+      'Delete all local data?',
+      'This permanently removes clients, job worksheets, calculation history, company details, and generated PDFs from this device. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete all data',
+          style: 'destructive',
+          onPress: () => {
+            setDeleting(true);
+            void deleteAllLocalData()
+              .then((complete) => {
+                setForm({ ...useAppStore.getState().company });
+                Alert.alert(
+                  complete ? 'Local data deleted' : 'Data cleared with a cleanup warning',
+                  complete
+                    ? 'BaseCalc Plumbing local records and generated files were removed from this device.'
+                    : 'App records were cleared, but one or more generated files or legacy storage items could not be removed. Check device storage before transferring the device.'
+                );
+              })
+              .finally(() => setDeleting(false));
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -65,7 +94,7 @@ export function SettingsScreen() {
               <View style={{ flex: 1, paddingRight: 14 }}>
                 <Body tone="primary">{isPro ? 'Pro plan' : 'Free plan'}</Body>
                 <Small tone="muted" style={{ marginTop: 4 }}>
-                  {isPro ? 'Ads are hidden and Pro limits are unlocked on this device.' : 'Upgrade to remove ads and unlock the full local workflow.'}
+                  {isPro ? 'All calculators and local workflow limits are unlocked on this device.' : 'Upgrade to unlock every calculator and remove local workflow limits.'}
                 </Small>
               </View>
               <MaterialIcons name={isPro ? 'workspace-premium' : 'person-outline'} size={24} color={isPro ? c.amber : c.textMuted} />
@@ -118,11 +147,28 @@ export function SettingsScreen() {
         </Section>
 
         <PrimaryButton label={saved ? 'Saved ✓' : 'Save settings'} icon={saved ? undefined : 'save'} onPress={handleSave} />
+
+        <Section title="Local data">
+          <Panel style={{ marginTop: SECTION_GAP }}>
+            <Body tone="primary">Delete data on this device</Body>
+            <Small tone="muted" style={{ marginTop: 5, marginBottom: 14 }}>
+              Removes app records, company details, calculation history, generated worksheets, legacy app storage, and the legacy local database. Purchase records remain with the app store and subscription provider.
+            </Small>
+            <View style={{ flexDirection: 'row' }}>
+              <SecondaryButton
+                label={deleting ? 'Deleting…' : 'Delete all local data'}
+                icon="delete-forever"
+                tint={c.fail}
+                onPress={deleting ? () => {} : confirmDeleteAllData}
+              />
+            </View>
+          </Panel>
+        </Section>
+
         <Small style={{ textAlign: 'center', marginTop: 18 }}>BaseCalc Plumbing v1.0 · Plumbing field reference</Small>
         <Small tone="muted" style={{ textAlign: 'center', marginTop: 10 }}>
-          Everything you save in BaseCalc Plumbing stays locally on this device, protected by your device security. BaseCalc Plumbing does not use cloud sync, and there will not be a cloud option.
+          App records stay on this device and are not synced to a BaseCalc account. Android app backup is disabled. Device or computer backups managed by the operating system may retain an older copy, so delete local data before making a backup or transferring the device.
         </Small>
-        <FooterAdBanner />
       </ListScreenScrollView>
     </Screen>
   );

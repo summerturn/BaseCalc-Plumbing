@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AppState as NativeAppState } from 'react-native';
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -39,6 +40,9 @@ import { PaywallScreen } from './src/screens/PaywallScreen';
 import { TAB_BAR_MIN_HEIGHT } from './src/components/ui';
 import { AppThemeProvider, useAppTheme } from './src/theme/useAppTheme';
 import { fontMap } from './src/theme/typography';
+import { isRevenueCatConfigured } from './src/lib/config';
+import { SubscriptionService } from './src/services/SubscriptionService';
+import { useAppStore } from './src/store/useAppStore';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -170,6 +174,37 @@ function Root() {
   );
 }
 
+function SubscriptionLifecycle() {
+  const refreshProStatus = useAppStore((state) => state.refreshProStatus);
+  const setPro = useAppStore((state) => state.setPro);
+
+  useEffect(() => {
+    if (!isRevenueCatConfigured()) {
+      setPro(false);
+      return;
+    }
+
+    let unsubscribe = () => {};
+    try {
+      unsubscribe = SubscriptionService.subscribeToCustomerInfoUpdates(setPro);
+    } catch (error) {
+      setPro(false);
+      console.error('[RevenueCat] entitlement listener setup failed:', error);
+    }
+    const appStateSubscription = NativeAppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') void refreshProStatus();
+    });
+    void refreshProStatus();
+
+    return () => {
+      appStateSubscription.remove();
+      unsubscribe();
+    };
+  }, [refreshProStatus, setPro]);
+
+  return null;
+}
+
 export default function App() {
   const [fontsLoaded, fontError] = useFonts(fontMap);
   const [timedOut, setTimedOut] = useState(false);
@@ -189,6 +224,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AppThemeProvider>
+        <SubscriptionLifecycle />
         <Root />
       </AppThemeProvider>
     </SafeAreaProvider>

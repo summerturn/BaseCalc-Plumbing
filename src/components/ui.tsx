@@ -539,13 +539,14 @@ export function PrimaryButton({
 }
 
 export function SecondaryButton({
-  label, onPress, icon, tint, style,
+  label, onPress, icon, tint, style, disabled = false,
 }: {
   label: string;
   onPress: () => void;
   icon?: IconName;
   tint?: string; // hex accent; when set, button is tinted
   style?: ViewStyle;
+  disabled?: boolean;
 }) {
   const c = useColors();
   const fg = tint ?? (c.mode === 'light' ? c.text : c.textDim);
@@ -556,6 +557,8 @@ export function SecondaryButton({
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
+      accessibilityState={{ disabled }}
       style={({ pressed }) => [
         {
           flex: 1,
@@ -568,7 +571,7 @@ export function SecondaryButton({
           borderWidth: 1,
           borderRadius: 13,
           paddingVertical: 13,
-          opacity: pressed ? 0.7 : 1,
+          opacity: disabled ? 0.5 : pressed ? 0.7 : 1,
         },
         style,
       ]}

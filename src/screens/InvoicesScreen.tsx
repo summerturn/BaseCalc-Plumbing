@@ -25,7 +25,6 @@ import {
   SecondaryButton,
   useBottomClearance,
 } from '../components/ui';
-import { FooterAdBanner } from '../components/AdBanner';
 import { useSubscription } from '../hooks/useSubscription';
 
 const statusTone = (status: Invoice['status']): PillTone =>
@@ -126,7 +125,6 @@ export function JobTicketsScreen({ navigation }: { navigation: any }) {
             </Pressable>
           ))
         )}
-        <FooterAdBanner />
       </ListScreenScrollView>
       <FAB onPress={() => { if (canAddInvoice()) navigation.navigate('CreateJobTicket'); }} />
     </Screen>
@@ -137,11 +135,12 @@ export function JobTicketsScreen({ navigation }: { navigation: any }) {
 
 export function CreateJobTicketScreen({ route, navigation }: { route: any; navigation: any }) {
   const { clients, addInvoice, generateInvoiceNumber } = useAppStore();
+  const { showLimitPrompt } = useSubscription();
   const c = useColors();
   const bottomClearance = useBottomClearance();
 
   const [clientId, setClientId] = useState(route.params?.clientId || '');
-  const [lineItems, setLineItems] = useState([InvoiceService.createLineItem('Electrical work item', 1, 0)]);
+  const [lineItems, setLineItems] = useState([InvoiceService.createLineItem('Plumbing work item', 1, 0)]);
   const [notes, setNotes] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -166,7 +165,7 @@ export function CreateJobTicketScreen({ route, navigation }: { route: any; navig
       Alert.alert('Job contact required', 'Please select or add a job contact for this worksheet.');
       return;
     }
-    addInvoice({
+    const added = addInvoice({
       clientId,
       invoiceNumber: generateInvoiceNumber(),
       date: new Date().toISOString(),
@@ -180,7 +179,11 @@ export function CreateJobTicketScreen({ route, navigation }: { route: any; navig
       notes,
       status: 'draft',
     });
-    navigation.goBack();
+    if (added) {
+      navigation.goBack();
+    } else {
+      showLimitPrompt('invoice');
+    }
   };
 
   return (
@@ -276,7 +279,7 @@ export function CreateJobTicketScreen({ route, navigation }: { route: any; navig
 
 export function JobTicketDetailScreen({ route, navigation }: { route: any; navigation: any }) {
   const { invoiceId } = route.params;
-  const { invoices, clients, company, updateInvoice } = useAppStore();
+  const { invoices, clients, company, updateInvoice, deleteInvoice } = useAppStore();
   const c = useColors();
   const bottomClearance = useBottomClearance();
   const invoice = invoices.find((i) => i.id === invoiceId);
@@ -294,18 +297,42 @@ export function JobTicketDetailScreen({ route, navigation }: { route: any; navig
   }
 
   const handlePDF = async () => {
+    if (generating) return;
     setGenerating(true);
-    const path = await InvoiceService.generatePDF(invoice, company, client?.name || 'Unknown job contact');
-    setGenerating(false);
-    if (path) {
+    try {
+      const path = await InvoiceService.generatePDF(invoice, company, client?.name || 'Unknown job contact');
+      if (!path) {
+        Alert.alert('Error', 'Could not generate the PDF.');
+        return;
+      }
+      if (!useAppStore.getState().getInvoiceById(invoice.id)) {
+        void InvoiceService.deletePDF(path);
+        return;
+      }
+      if (invoice.pdfPath && invoice.pdfPath !== path) void InvoiceService.deletePDF(invoice.pdfPath);
       updateInvoice(invoice.id, { pdfPath: path });
       Alert.alert('PDF ready', 'Job worksheet PDF generated.', [
         { text: 'Share', onPress: () => InvoiceService.sharePDF(path) },
         { text: 'Done', style: 'cancel' },
       ]);
-    } else {
-      Alert.alert('Error', 'Could not generate the PDF.');
+    } finally {
+      setGenerating(false);
     }
+  };
+
+  const confirmDelete = () => {
+    if (generating) return;
+    Alert.alert('Delete worksheet', 'Delete this worksheet and its generated PDF from BaseCalc Plumbing?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          deleteInvoice(invoice.id);
+          navigation.goBack();
+        },
+      },
+    ]);
   };
 
   const handleSpeakSheetHandoff = async () => {
@@ -380,6 +407,9 @@ export function JobTicketDetailScreen({ route, navigation }: { route: any; navig
         </View>
 
         <PrimaryButton label={generating ? 'Generating...' : 'Export worksheet PDF'} icon="picture-as-pdf" loading={generating} onPress={handlePDF} />
+        <View style={{ marginTop: 12 }}>
+          <SecondaryButton label="Delete worksheet" icon="delete-outline" tint={c.fail} onPress={confirmDelete} disabled={generating} />
+        </View>
       </ScrollView>
     </Screen>
   );

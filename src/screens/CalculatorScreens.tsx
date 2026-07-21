@@ -1,13 +1,24 @@
-import { type ComponentProps, useState } from 'react';
+import { type ComponentProps, useEffect, useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  type NavigationProp,
+  type ParamListBase,
+  type RouteProp,
+} from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import {
   CalculationResult,
   MetricResult,
   PipeMaterial,
   BackflowType,
-  PIPE_SIZES,
+  DrainSlope,
+  PIPE_MATERIAL_OPTIONS,
+  DRAIN_PIPE_SIZES,
+  DRAIN_SLOPE_OPTIONS,
+  pipeMaterialLabel,
+  pipeSizesForMaterial,
 } from '../engine/PlumbingEngine';
 import { PlumbingEngine } from '../engine/PlumbingEngine';
 import { useAppStore } from '../store/useAppStore';
@@ -32,10 +43,9 @@ import {
   useBottomClearance,
   withAlpha,
 } from '../components/ui';
-import { FooterAdBanner } from '../components/AdBanner';
+import { isPremiumCalculatorRoute } from '../lib/accessControl';
 
 type IconName = ComponentProps<typeof MaterialIcons>['name'];
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const fmt = (n: number, d: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 const BRAND_ICON = require('../../assets/icon.png');
@@ -52,24 +62,24 @@ type CalcDef = {
 };
 
 const CALCS: CalcDef[] = [
-  { key: 'pipe-velocity', title: 'Pipe Velocity', subtitle: 'Velocity from GPM', icon: 'water-drop', code: 'V = GPM ÷ A', route: 'PipeVelocity', color: CATEGORY.water },
-  { key: 'flow-rate', title: 'Flow Rate', subtitle: 'GPM from velocity', icon: 'opacity', code: 'GPM = V × A', route: 'FlowRate', color: CATEGORY.water },
-  { key: 'pipe-volume', title: 'Pipe Volume', subtitle: 'Gallons in pipe', icon: 'invert-colors', code: 'Gal = area × L', route: 'PipeVolume', color: CATEGORY.water },
+  { key: 'pipe-velocity', title: 'Pipe Velocity', subtitle: 'Material-specific ID', icon: 'water-drop', code: 'V = GPM ÷ A', route: 'PipeVelocity', color: CATEGORY.water },
+  { key: 'flow-rate', title: 'Flow Rate', subtitle: 'Material-specific ID', icon: 'opacity', code: 'GPM = V × A', route: 'FlowRate', color: CATEGORY.water },
+  { key: 'pipe-volume', title: 'Pipe Volume', subtitle: 'Material-specific ID', icon: 'invert-colors', code: 'Gal = area × L', route: 'PipeVolume', color: CATEGORY.water },
   { key: 'water-pressure', title: 'Water Pressure', subtitle: 'Head ↔ psi', icon: 'compress', code: '1 psi = 2.31 ft', route: 'WaterPressure', color: CATEGORY.pressure },
-  { key: 'pipe-sizing', title: 'Pipe Sizing', subtitle: 'Size from GPM & velocity', icon: 'line-weight', code: 'Area = GPM ÷ V', route: 'PipeSizing', color: CATEGORY.water, proOnly: true },
-  { key: 'pressure-drop', title: 'Pressure Drop', subtitle: 'Hazen-Williams', icon: 'trending-down', code: 'psi/ft', route: 'PressureDrop', color: CATEGORY.pressure, proOnly: true },
-  { key: 'drainage', title: 'Drainage Sizing', subtitle: 'Fixture units → pipe', icon: 'remove-circle-outline', code: 'IPC drain', route: 'DrainageSizing', color: CATEGORY.drainage, proOnly: true },
-  { key: 'vent', title: 'Vent Sizing', subtitle: 'FU + length → vent', icon: 'vertical-align-top', code: 'IPC vent', route: 'VentSizing', color: CATEGORY.drainage, proOnly: true },
+  { key: 'pipe-sizing', title: 'Pipe Sizing', subtitle: 'Select material', icon: 'line-weight', code: 'Area = GPM ÷ V', route: 'PipeSizing', color: CATEGORY.water, proOnly: true },
+  { key: 'pressure-drop', title: 'Pressure Drop', subtitle: 'Material-specific ID', icon: 'trending-down', code: 'psi/ft', route: 'PressureDrop', color: CATEGORY.pressure, proOnly: true },
+  { key: 'drainage', title: 'Drainage Sizing', subtitle: 'DFU + slope', icon: 'remove-circle-outline', code: 'IPC 710.1(1)', route: 'DrainageSizing', color: CATEGORY.drainage, proOnly: true },
+  { key: 'vent', title: 'Vent Sizing', subtitle: 'Drain + length', icon: 'vertical-align-top', code: 'IPC 906.2', route: 'VentSizing', color: CATEGORY.drainage, proOnly: true },
   { key: 'water-heater', title: 'Water Heater', subtitle: 'First-hour rating', icon: 'bathtub', code: 'FHR', route: 'WaterHeater', color: CATEGORY.heating, proOnly: true },
   { key: 'gas-pipe', title: 'Gas Pipe Sizing', subtitle: 'BTU/hr + length', icon: 'local-fire-department', code: 'Iron pipe', route: 'GasPipeSizing', color: CATEGORY.gas, proOnly: true },
   { key: 'pump-head', title: 'Pump Head', subtitle: 'Total dynamic head', icon: 'arrow-upward', code: 'TDH', route: 'PumpHead', color: CATEGORY.pressure, proOnly: true },
   { key: 'expansion', title: 'Pipe Expansion', subtitle: 'Thermal ΔL', icon: 'unfold-more', code: 'ΔL', route: 'PipeExpansion', color: CATEGORY.general, proOnly: true },
   { key: 'fixture-units', title: 'Fixture Units', subtitle: 'Count fixtures', icon: 'countertops', code: 'FU total', route: 'FixtureUnits', color: CATEGORY.fixtures, proOnly: true },
-  { key: 'meter', title: 'Water Meter Sizing', subtitle: 'FU → meter', icon: 'speed', code: 'Meter size', route: 'WaterMeterSizing', color: CATEGORY.water, proOnly: true },
+  { key: 'meter', title: 'Meter Sizing Inputs', subtitle: 'Utility table required', icon: 'speed', code: 'Input check', route: 'WaterMeterSizing', color: CATEGORY.water, proOnly: true },
   { key: 'irrigation', title: 'Irrigation Flow', subtitle: 'Zone GPM', icon: 'grass', code: 'Heads × GPM', route: 'IrrigationFlow', color: CATEGORY.irrigation, proOnly: true },
-  { key: 'septic', title: 'Septic Tank', subtitle: 'Bedrooms → tank', icon: 'home', code: 'Min gallons', route: 'SepticTank', color: CATEGORY.drainage, proOnly: true },
-  { key: 'grease', title: 'Grease Interceptor', subtitle: 'Size by FU/GPM', icon: 'oil-barrel', code: 'Interceptor', route: 'GreaseInterceptor', color: CATEGORY.drainage, proOnly: true },
-  { key: 'backflow', title: 'Backflow Pressure', subtitle: 'Pressure loss', icon: 'tune', code: 'ΔP device', route: 'BackflowPressure', color: CATEGORY.pressure, proOnly: true },
+  { key: 'septic', title: 'Septic Tank Planning', subtitle: 'Bedrooms → planning volume', icon: 'home', code: 'Local rules required', route: 'SepticTank', color: CATEGORY.drainage, proOnly: true },
+  { key: 'grease', title: 'Grease Sizing Inputs', subtitle: 'Adopted method required', icon: 'oil-barrel', code: 'Input check', route: 'GreaseInterceptor', color: CATEGORY.drainage, proOnly: true },
+  { key: 'backflow', title: 'Backflow Loss Inputs', subtitle: 'Manufacturer curve required', icon: 'tune', code: 'Input check', route: 'BackflowPressure', color: CATEGORY.pressure, proOnly: true },
 ];
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -357,8 +367,6 @@ export function CalculatorDashboardScreen({ navigation }: { navigation: { naviga
             ))}
           </View>
         </View>
-
-        <FooterAdBanner />
       </ScrollView>
     </Screen>
   );
@@ -367,8 +375,33 @@ export function CalculatorDashboardScreen({ navigation }: { navigation: { naviga
 // ─── Shared calculator shell ─────────────────────────────────────────
 
 export function CalculatorShell({ title, code, children }: { title: string; code?: string; children: React.ReactNode }) {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NavigationProp<ParamListBase>>();
+  const route = useRoute<RouteProp<ParamListBase>>();
+  const isPro = useAppStore((state) => state.isPro);
   const bottomClearance = useBottomClearance();
+  const premiumBlocked = isPremiumCalculatorRoute(route.name) && !isPro;
+
+  useEffect(() => {
+    if (premiumBlocked) navigation.navigate('Paywall');
+  }, [navigation, premiumBlocked]);
+
+  if (premiumBlocked) {
+    return (
+      <Screen>
+        <FormScrollView bottomPadding={bottomClearance + 28}>
+          <BackBar onBack={() => navigation.goBack()} />
+          <Panel>
+            <H2>Pro calculator</H2>
+            <Body tone="muted" style={{ marginTop: 8, marginBottom: 16 }}>
+              An active BaseCalc Plumbing Pro subscription is required for this calculator.
+            </Body>
+            <PrimaryButton label="View Pro options" icon="workspace-premium" onPress={() => navigation.navigate('Paywall')} />
+          </Panel>
+        </FormScrollView>
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
       <FormScrollView bottomPadding={bottomClearance + 28}>
@@ -385,15 +418,25 @@ export function CalculatorShell({ title, code, children }: { title: string; code
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-const PIPE_SIZE_OPTIONS = PIPE_SIZES.map((p) => p.nominal);
-const MATERIAL_OPTIONS: PipeMaterial[] = ['copper', 'cpvc', 'pvc'];
 const BACKFLOW_OPTIONS: BackflowType[] = ['PVB', 'DCV', 'RPZ'];
+
+type SizedPipeInputs = { material: PipeMaterial; pipeSize: string };
+
+function pipeSizeOptions(material: PipeMaterial): string[] {
+  return pipeSizesForMaterial(material).map((pipe) => pipe.nominal);
+}
+
+function updatePipeMaterial<T extends SizedPipeInputs>(inputs: T, material: PipeMaterial): T {
+  const options = pipeSizeOptions(material);
+  const pipeSize = options.includes(inputs.pipeSize) ? inputs.pipeSize : options[0];
+  return { ...inputs, material, pipeSize };
+}
 
 // ─── Pipe Velocity ───────────────────────────────────────────────────
 
 export function PipeVelocityScreen() {
   const { addCalculation } = useAppStore();
-  const [inputs, setInputs] = useState({ gpm: 10, pipeSize: '3/4"' });
+  const [inputs, setInputs] = useState({ gpm: 10, pipeSize: '3/4"', material: 'copper' as PipeMaterial });
   const [result, setResult] = useState<MetricResult | null>(null);
 
   const calculate = () => {
@@ -403,10 +446,11 @@ export function PipeVelocityScreen() {
   };
 
   return (
-    <CalculatorShell title="Pipe Velocity" code="Velocity = GPM ÷ (449 × area)">
+    <CalculatorShell title="Pipe Velocity" code={`${pipeMaterialLabel(inputs.material)} · velocity = GPM ÷ (449 × area)`}>
       <Panel>
         <Field label="Flow rate" suffix="GPM" value={String(inputs.gpm)} keyboardType="decimal-pad" onChangeText={(t) => setInputs({ ...inputs, gpm: Number(t) || 0 })} />
-        <Segmented label="Pipe size" value={inputs.pipeSize} options={PIPE_SIZE_OPTIONS} onChange={(pipeSize) => setInputs({ ...inputs, pipeSize })} />
+        <Segmented label="Material" value={inputs.material} options={PIPE_MATERIAL_OPTIONS} onChange={(material) => setInputs(updatePipeMaterial(inputs, material))} format={pipeMaterialLabel} />
+        <Segmented label="Pipe size" value={inputs.pipeSize} options={pipeSizeOptions(inputs.material)} onChange={(pipeSize) => setInputs({ ...inputs, pipeSize })} />
         <PrimaryButton label="Calculate" icon="water-drop" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
       <MetricReadout result={result} accent={CATEGORY.water} />
@@ -418,7 +462,7 @@ export function PipeVelocityScreen() {
 
 export function FlowRateScreen() {
   const { addCalculation } = useAppStore();
-  const [inputs, setInputs] = useState({ velocity: 5, pipeSize: '3/4"' });
+  const [inputs, setInputs] = useState({ velocity: 5, pipeSize: '3/4"', material: 'copper' as PipeMaterial });
   const [result, setResult] = useState<MetricResult | null>(null);
 
   const calculate = () => {
@@ -428,10 +472,11 @@ export function FlowRateScreen() {
   };
 
   return (
-    <CalculatorShell title="Flow Rate" code="GPM = velocity × 449 × area">
+    <CalculatorShell title="Flow Rate" code={`${pipeMaterialLabel(inputs.material)} · GPM = velocity × 449 × area`}>
       <Panel>
         <Field label="Velocity" suffix="ft/s" value={String(inputs.velocity)} keyboardType="decimal-pad" onChangeText={(t) => setInputs({ ...inputs, velocity: Number(t) || 0 })} />
-        <Segmented label="Pipe size" value={inputs.pipeSize} options={PIPE_SIZE_OPTIONS} onChange={(pipeSize) => setInputs({ ...inputs, pipeSize })} />
+        <Segmented label="Material" value={inputs.material} options={PIPE_MATERIAL_OPTIONS} onChange={(material) => setInputs(updatePipeMaterial(inputs, material))} format={pipeMaterialLabel} />
+        <Segmented label="Pipe size" value={inputs.pipeSize} options={pipeSizeOptions(inputs.material)} onChange={(pipeSize) => setInputs({ ...inputs, pipeSize })} />
         <PrimaryButton label="Calculate" icon="opacity" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
       <MetricReadout result={result} accent={CATEGORY.water} />
@@ -443,20 +488,21 @@ export function FlowRateScreen() {
 
 export function PipeSizingScreen() {
   const { addCalculation } = useAppStore();
-  const [inputs, setInputs] = useState({ gpm: 10, maxVelocity: 8 });
+  const [inputs, setInputs] = useState({ gpm: 10, maxVelocity: 8, material: 'copper' as PipeMaterial });
   const [result, setResult] = useState<CalculationResult | null>(null);
 
   const calculate = () => {
     const res = PlumbingEngine.pipeSizing(inputs);
     setResult(res);
-    addCalculation({ type: 'pipeSizing', inputs, result: res });
+    if (res.passes) addCalculation({ type: 'pipeSizing', inputs, result: res });
   };
 
   return (
-    <CalculatorShell title="Pipe Sizing" code="Minimum pipe size from GPM">
+    <CalculatorShell title="Pipe Sizing" code={`${pipeMaterialLabel(inputs.material)} · minimum nominal size from GPM`}>
       <Panel>
         <Field label="Flow rate" suffix="GPM" value={String(inputs.gpm)} keyboardType="decimal-pad" onChangeText={(t) => setInputs({ ...inputs, gpm: Number(t) || 0 })} />
         <Field label="Max velocity" suffix="ft/s" value={String(inputs.maxVelocity)} keyboardType="decimal-pad" onChangeText={(t) => setInputs({ ...inputs, maxVelocity: Number(t) || 0 })} />
+        <Segmented label="Material" value={inputs.material} options={PIPE_MATERIAL_OPTIONS} onChange={(material) => setInputs({ ...inputs, material })} format={pipeMaterialLabel} />
         <PrimaryButton label="Calculate" icon="line-weight" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
       <ResultReadout result={result} />
@@ -468,7 +514,7 @@ export function PipeSizingScreen() {
 
 export function PressureDropScreen() {
   const { addCalculation } = useAppStore();
-  const [inputs, setInputs] = useState({ gpm: 10, pipeSize: '3/4"', length: 100, material: 'copper' as PipeMaterial });
+  const [inputs, setInputs] = useState({ gpm: 10, pipeSize: '3/4"', length: 100, material: 'copper' as const });
   const [result, setResult] = useState<MetricResult | null>(null);
 
   const calculate = () => {
@@ -478,12 +524,12 @@ export function PressureDropScreen() {
   };
 
   return (
-    <CalculatorShell title="Pressure Drop" code="Hazen-Williams pressure loss">
+    <CalculatorShell title="Pressure Drop" code={`${pipeMaterialLabel(inputs.material)} · Hazen-Williams pressure loss`}>
       <Panel>
         <Field label="Flow rate" suffix="GPM" value={String(inputs.gpm)} keyboardType="decimal-pad" onChangeText={(t) => setInputs({ ...inputs, gpm: Number(t) || 0 })} />
-        <Segmented label="Pipe size" value={inputs.pipeSize} options={PIPE_SIZE_OPTIONS} onChange={(pipeSize) => setInputs({ ...inputs, pipeSize })} />
+        <Segmented label="Material" value={inputs.material} options={PIPE_MATERIAL_OPTIONS} onChange={(material) => setInputs(updatePipeMaterial(inputs, material))} format={pipeMaterialLabel} />
+        <Segmented label="Pipe size" value={inputs.pipeSize} options={pipeSizeOptions(inputs.material)} onChange={(pipeSize) => setInputs({ ...inputs, pipeSize })} />
         <Field label="Length" suffix="ft" value={String(inputs.length)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, length: Number(t) || 0 })} />
-        <Segmented label="Material" value={inputs.material} options={MATERIAL_OPTIONS} onChange={(material) => setInputs({ ...inputs, material })} format={cap} />
         <PrimaryButton label="Calculate" icon="trending-down" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
       <MetricReadout result={result} accent={CATEGORY.pressure} />
@@ -495,19 +541,30 @@ export function PressureDropScreen() {
 
 export function DrainageSizingScreen() {
   const { addCalculation } = useAppStore();
-  const [inputs, setInputs] = useState({ fixtureUnits: 10 });
+  const [inputs, setInputs] = useState<{
+    fixtureUnits: number;
+    slope: DrainSlope;
+    includesWaterCloset: boolean;
+  }>({ fixtureUnits: 10, slope: '1/4', includesWaterCloset: false });
   const [result, setResult] = useState<CalculationResult | null>(null);
 
   const calculate = () => {
     const res = PlumbingEngine.drainageSizing(inputs);
     setResult(res);
-    addCalculation({ type: 'drainageSizing', inputs, result: res });
+    if (res.passes) addCalculation({ type: 'drainageSizing', inputs, result: res });
   };
 
   return (
-    <CalculatorShell title="Drainage Sizing" code="Fixture units → drain diameter">
+    <CalculatorShell title="Drainage Sizing" code="2021 IPC 710.1(1) · building drain">
       <Panel>
         <Field label="Fixture units" value={String(inputs.fixtureUnits)} keyboardType="decimal-pad" onChangeText={(t) => setInputs({ ...inputs, fixtureUnits: Number(t) || 0 })} />
+        <Segmented label="Slope (in/ft)" value={inputs.slope} options={DRAIN_SLOPE_OPTIONS} onChange={(slope) => setInputs({ ...inputs, slope })} />
+        <Segmented
+          label="Serves water closet"
+          value={inputs.includesWaterCloset ? 'Yes' : 'No'}
+          options={['No', 'Yes'] as const}
+          onChange={(value) => setInputs({ ...inputs, includesWaterCloset: value === 'Yes' })}
+        />
         <PrimaryButton label="Calculate" icon="remove-circle-outline" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
       <ResultReadout result={result} />
@@ -519,19 +576,19 @@ export function DrainageSizingScreen() {
 
 export function VentSizingScreen() {
   const { addCalculation } = useAppStore();
-  const [inputs, setInputs] = useState({ fixtureUnits: 10, ventLength: 30 });
+  const [inputs, setInputs] = useState({ drainSize: '3"', ventLength: 30 });
   const [result, setResult] = useState<CalculationResult | null>(null);
 
   const calculate = () => {
     const res = PlumbingEngine.ventSizing(inputs);
     setResult(res);
-    addCalculation({ type: 'ventSizing', inputs, result: res });
+    if (res.passes) addCalculation({ type: 'ventSizing', inputs, result: res });
   };
 
   return (
-    <CalculatorShell title="Vent Sizing" code="Fixture units + length → vent">
+    <CalculatorShell title="Vent Sizing" code="2021 IPC 906.2 · individual / branch vent">
       <Panel>
-        <Field label="Fixture units" value={String(inputs.fixtureUnits)} keyboardType="decimal-pad" onChangeText={(t) => setInputs({ ...inputs, fixtureUnits: Number(t) || 0 })} />
+        <Segmented label="Drain served" value={inputs.drainSize} options={DRAIN_PIPE_SIZES} onChange={(drainSize) => setInputs({ ...inputs, drainSize })} />
         <Field label="Vent length" suffix="ft" value={String(inputs.ventLength)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, ventLength: Number(t) || 0 })} />
         <PrimaryButton label="Calculate" icon="vertical-align-top" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
@@ -581,10 +638,11 @@ export function GasPipeSizingScreen() {
   };
 
   return (
-    <CalculatorShell title="Gas Pipe Sizing" code="BTU/hr + length → iron pipe">
+    <CalculatorShell title="Low-Pressure Natural Gas Pipe" code="2021 IFGC Table 402.4(1)">
       <Panel>
+        <Body tone="muted" style={{ marginBottom: 16 }}>Fixed basis: Schedule 40 metallic pipe, inlet below 2 psi, 0.3 in. w.c. drop, and 0.60 specific gravity.</Body>
         <Field label="Load" suffix="BTU/hr" value={String(inputs.btuPerHour)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, btuPerHour: Number(t) || 0 })} />
-        <Field label="Length" suffix="ft" value={String(inputs.length)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, length: Number(t) || 0 })} />
+        <Field label="Longest developed length" suffix="ft" value={String(inputs.length)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, length: Number(t) || 0 })} />
         <PrimaryButton label="Calculate" icon="local-fire-department" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
       <MetricReadout result={result} accent={CATEGORY.gas} />
@@ -622,7 +680,7 @@ export function PumpHeadScreen() {
 
 export function PipeVolumeScreen() {
   const { addCalculation } = useAppStore();
-  const [inputs, setInputs] = useState({ pipeSize: '3/4"', length: 100 });
+  const [inputs, setInputs] = useState({ pipeSize: '3/4"', length: 100, material: 'copper' as PipeMaterial });
   const [result, setResult] = useState<MetricResult | null>(null);
 
   const calculate = () => {
@@ -632,9 +690,10 @@ export function PipeVolumeScreen() {
   };
 
   return (
-    <CalculatorShell title="Pipe Volume" code="Gallons of water in pipe">
+    <CalculatorShell title="Pipe Volume" code={`${pipeMaterialLabel(inputs.material)} · gallons of water in pipe`}>
       <Panel>
-        <Segmented label="Pipe size" value={inputs.pipeSize} options={PIPE_SIZE_OPTIONS} onChange={(pipeSize) => setInputs({ ...inputs, pipeSize })} />
+        <Segmented label="Material" value={inputs.material} options={PIPE_MATERIAL_OPTIONS} onChange={(material) => setInputs(updatePipeMaterial(inputs, material))} format={pipeMaterialLabel} />
+        <Segmented label="Pipe size" value={inputs.pipeSize} options={pipeSizeOptions(inputs.material)} onChange={(pipeSize) => setInputs({ ...inputs, pipeSize })} />
         <Field label="Length" suffix="ft" value={String(inputs.length)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, length: Number(t) || 0 })} />
         <PrimaryButton label="Calculate" icon="invert-colors" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
@@ -690,10 +749,10 @@ export function PipeExpansionScreen() {
   return (
     <CalculatorShell title="Pipe Expansion" code="Thermal expansion length">
       <Panel>
-        <Segmented label="Pipe size" value={inputs.pipeSize} options={PIPE_SIZE_OPTIONS} onChange={(pipeSize) => setInputs({ ...inputs, pipeSize })} />
+        <Segmented label="Material" value={inputs.material} options={PIPE_MATERIAL_OPTIONS} onChange={(material) => setInputs(updatePipeMaterial(inputs, material))} format={pipeMaterialLabel} />
+        <Segmented label="Pipe size" value={inputs.pipeSize} options={pipeSizeOptions(inputs.material)} onChange={(pipeSize) => setInputs({ ...inputs, pipeSize })} />
         <Field label="Length" suffix="ft" value={String(inputs.length)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, length: Number(t) || 0 })} />
         <Field label="Temperature change" suffix="°F" value={String(inputs.deltaT)} keyboardType="decimal-pad" onChangeText={(t) => setInputs({ ...inputs, deltaT: Number(t) || 0 })} />
-        <Segmented label="Material" value={inputs.material} options={MATERIAL_OPTIONS} onChange={(material) => setInputs({ ...inputs, material })} format={cap} />
         <PrimaryButton label="Calculate" icon="unfold-more" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
       <MetricReadout result={result} accent={CATEGORY.general} />
@@ -713,7 +772,8 @@ export function FixtureUnitsScreen() {
     kitchenSink: 0,
     dishwasher: 0,
     washingMachine: 0,
-    urinal: 0,
+    urinalStandard: 0,
+    urinalLowFlow: 0,
   });
   const [result, setResult] = useState<MetricResult | null>(null);
 
@@ -724,16 +784,18 @@ export function FixtureUnitsScreen() {
   };
 
   return (
-    <CalculatorShell title="Fixture Units" code="Count fixtures → total FU">
+    <CalculatorShell title="Drainage Fixture Units" code="2021 IPC Table 709.1 selected rows">
       <Panel>
-        <Field label="Toilets" value={String(inputs.toilet)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, toilet: Number(t) || 0 })} />
-        <Field label="Lavatories" value={String(inputs.lavatory)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, lavatory: Number(t) || 0 })} />
-        <Field label="Bathtubs" value={String(inputs.bathtub)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, bathtub: Number(t) || 0 })} />
-        <Field label="Showers" value={String(inputs.shower)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, shower: Number(t) || 0 })} />
-        <Field label="Kitchen sinks" value={String(inputs.kitchenSink)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, kitchenSink: Number(t) || 0 })} />
-        <Field label="Dishwashers" value={String(inputs.dishwasher)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, dishwasher: Number(t) || 0 })} />
-        <Field label="Washing machines" value={String(inputs.washingMachine)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, washingMachine: Number(t) || 0 })} />
-        <Field label="Urinals" value={String(inputs.urinal)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, urinal: Number(t) || 0 })} />
+        <Body tone="muted" style={{ marginBottom: 16 }}>Count fixtures individually. Do not also count the same fixtures as a bathroom group.</Body>
+        <Field label="Private 1.6 gpf toilets (3 DFU)" value={String(inputs.toilet)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, toilet: Number(t) || 0 })} />
+        <Field label="Lavatories (1 DFU)" value={String(inputs.lavatory)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, lavatory: Number(t) || 0 })} />
+        <Field label="Bathtubs (2 DFU)" value={String(inputs.bathtub)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, bathtub: Number(t) || 0 })} />
+        <Field label="Showers up to 5.7 GPM (2 DFU)" value={String(inputs.shower)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, shower: Number(t) || 0 })} />
+        <Field label="Private kitchen sinks (2 DFU)" value={String(inputs.kitchenSink)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, kitchenSink: Number(t) || 0 })} />
+        <Field label="Domestic dishwashers (2 DFU)" value={String(inputs.dishwasher)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, dishwasher: Number(t) || 0 })} />
+        <Field label="Residential clothes washers (2 DFU)" value={String(inputs.washingMachine)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, washingMachine: Number(t) || 0 })} />
+        <Field label="Urinals, standard row (4 DFU)" value={String(inputs.urinalStandard)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, urinalStandard: Number(t) || 0 })} />
+        <Field label="Urinals, 1 gpf or less (2 DFU)" value={String(inputs.urinalLowFlow)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, urinalLowFlow: Number(t) || 0 })} />
         <PrimaryButton label="Calculate" icon="countertops" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
       <MetricReadout result={result} accent={CATEGORY.fixtures} />
@@ -755,10 +817,10 @@ export function WaterMeterSizingScreen() {
   };
 
   return (
-    <CalculatorShell title="Water Meter Sizing" code="Fixture units → meter">
+    <CalculatorShell title="Meter Sizing Inputs" code="Serving utility data required">
       <Panel>
         <Field label="Fixture units" value={String(inputs.fixtureUnits)} keyboardType="decimal-pad" onChangeText={(t) => setInputs({ ...inputs, fixtureUnits: Number(t) || 0 })} />
-        <PrimaryButton label="Calculate" icon="speed" onPress={calculate} style={{ marginTop: 4 }} />
+        <PrimaryButton label="Check inputs" icon="speed" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
       <MetricReadout result={result} accent={CATEGORY.water} />
     </CalculatorShell>
@@ -804,8 +866,9 @@ export function SepticTankScreen() {
   };
 
   return (
-    <CalculatorShell title="Septic Tank" code="Bedrooms → minimum tank">
+    <CalculatorShell title="Septic Planning Volume" code="Planning only; local rule required">
       <Panel>
+        <Body tone="muted" style={{ marginBottom: 16 }}>This estimate is not a permit minimum. Final capacity depends on the current state and local health-department rule.</Body>
         <Field label="Bedrooms" value={String(inputs.bedrooms)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, bedrooms: Number(t) || 0 })} />
         <Field label="Flow per bedroom" suffix="GPD" value={String(inputs.dailyFlowPerBedroom)} keyboardType="numeric" onChangeText={(t) => setInputs({ ...inputs, dailyFlowPerBedroom: Number(t) || 0 })} />
         <PrimaryButton label="Calculate" icon="home" onPress={calculate} style={{ marginTop: 4 }} />
@@ -834,12 +897,12 @@ export function GreaseInterceptorScreen() {
   };
 
   return (
-    <CalculatorShell title="Grease Interceptor" code="Size by FU or GPM">
+    <CalculatorShell title="Grease Sizing Inputs" code="Adopted sizing method required">
       <Panel>
-        <Body tone="muted" style={{ marginBottom: 16 }}>Enter fixture units or GPM to estimate interceptor size.</Body>
+        <Body tone="muted" style={{ marginBottom: 16 }}>Enter one known demand input to check whether a sizing method can be applied.</Body>
         <Field label="Fixture units" value={fu} onChangeText={setFu} keyboardType="decimal-pad" placeholder="—" />
         <Field label="Flow rate" suffix="GPM" value={gpm} onChangeText={setGpm} keyboardType="decimal-pad" placeholder="—" />
-        <PrimaryButton label="Calculate" icon="oil-barrel" onPress={calculate} style={{ marginTop: 4 }} />
+        <PrimaryButton label="Check inputs" icon="oil-barrel" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
       <MetricReadout result={result} accent={CATEGORY.drainage} />
     </CalculatorShell>
@@ -860,11 +923,11 @@ export function BackflowPressureScreen() {
   };
 
   return (
-    <CalculatorShell title="Backflow Pressure" code="Pressure loss across device">
+    <CalculatorShell title="Backflow Loss Inputs" code="Manufacturer pressure-loss curve required">
       <Panel>
         <Field label="Flow rate" suffix="GPM" value={String(inputs.gpm)} keyboardType="decimal-pad" onChangeText={(t) => setInputs({ ...inputs, gpm: Number(t) || 0 })} />
         <Segmented label="Device type" value={inputs.type} options={BACKFLOW_OPTIONS} onChange={(type) => setInputs({ ...inputs, type })} />
-        <PrimaryButton label="Calculate" icon="tune" onPress={calculate} style={{ marginTop: 4 }} />
+        <PrimaryButton label="Check inputs" icon="tune" onPress={calculate} style={{ marginTop: 4 }} />
       </Panel>
       <MetricReadout result={result} accent={CATEGORY.pressure} />
     </CalculatorShell>

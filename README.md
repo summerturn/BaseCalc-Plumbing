@@ -5,12 +5,12 @@ Field-ready plumbing calculators and job records for technicians, installers, an
 ## Features
 
 **Calculators (18 plumbing field tools)**
-- **Pipe Velocity** — velocity from GPM and nominal pipe size
-- **Flow Rate** — GPM from velocity and nominal pipe size
-- **Pipe Sizing** — minimum pipe size from GPM and max velocity
-- **Pressure Drop** — Hazen-Williams pressure loss
-- **Drainage Sizing** — fixture units → minimum drainage pipe diameter
-- **Vent Sizing** — fixture units + vent length → minimum vent diameter
+- **Pipe Velocity** — velocity from GPM and material-specific inside diameter
+- **Flow Rate** — GPM from velocity and material-specific inside diameter
+- **Pipe Sizing** — minimum supported pipe size from GPM, max velocity, and material standard
+- **Pressure Drop** — Hazen-Williams pressure loss using the selected material standard
+- **Drainage Sizing** — fixture units, slope, and water-closet service → minimum supported building drain
+- **Vent Sizing** — drain size and developed vent length → minimum individual / branch vent
 - **Water Heater** — first-hour rating / recovery estimate
 - **Gas Pipe Sizing** — BTU/hr + length → minimum gas pipe size
 - **Pump Head** — total dynamic head from lift, friction, and pressure
@@ -18,13 +18,13 @@ Field-ready plumbing calculators and job records for technicians, installers, an
 - **Water Pressure** — pressure ↔ head conversion
 - **Pipe Expansion** — thermal expansion length change
 - **Fixture Units** — count common fixtures → total fixture units
-- **Water Meter Sizing** — fixture units → meter size
+- **Meter Sizing Inputs** — identifies the utility and system data required for meter sizing
 - **Irrigation Flow** — zone GPM from heads × GPM per head
 - **Septic Tank** — bedrooms / daily flow → minimum tank volume
-- **Grease Interceptor** — fixture units / GPM → interceptor size
-- **Backflow Pressure** — pressure loss across backflow preventer
+- **Grease Sizing Inputs** — identifies additional adopted-method inputs required for sizing
+- **Backflow Loss Inputs** — identifies manufacturer curve data required for pressure loss
 
-Every result shows a clear readout, the governing limit where applicable, and a full breakdown.
+Supported results show a clear readout, the governing limit where applicable, and a full breakdown. Table-bound calculators return an explicit unsupported result when inputs exceed the modeled range; they do not clamp to the largest size.
 
 **Field workflow**
 - Job contacts for field-ticket context

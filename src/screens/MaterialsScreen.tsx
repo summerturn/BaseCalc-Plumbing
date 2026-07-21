@@ -20,7 +20,7 @@ import {
   useBottomClearance,
   withAlpha,
 } from '../components/ui';
-import { FooterAdBanner } from '../components/AdBanner';
+import { useSubscription } from '../hooks/useSubscription';
 
 type MaterialItem = {
   id: string;
@@ -165,6 +165,7 @@ function MaterialPanel({
 export function MaterialsScreen() {
   const navigation = useNavigation<any>();
   const { invoices, clients, updateInvoice } = useAppStore();
+  const { canAddInvoice } = useSubscription();
   const c = useColors();
   const bottomClearance = useBottomClearance();
   const [query, setQuery] = useState('');
@@ -206,8 +207,10 @@ export function MaterialsScreen() {
   };
 
   const createJob = () => {
-    setPickerOpen(false);
-    navigation.navigate('Jobs', { screen: 'CreateJobTicket' });
+    if (canAddInvoice()) {
+      setPickerOpen(false);
+      navigation.navigate('Jobs', { screen: 'CreateJobTicket' });
+    }
   };
 
   const selectedCount = selected.size;
@@ -239,7 +242,6 @@ export function MaterialsScreen() {
             />
           ))
         )}
-        <FooterAdBanner />
       </ListScreenScrollView>
 
       <View

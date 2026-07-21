@@ -84,6 +84,7 @@ Initial release of BaseCalc Plumbing Calculator with 18 plumbing field calculato
 ## Launch Declarations
 
 - Privacy policy URL: `https://basemapped.com/basecalc-plumbing/privacy-policy`
+- Apple standard Terms of Use (EULA): `https://www.apple.com/legal/internet-services/itunes/dev/stdeula/`
 - Support URL: `https://basemapped.com/basecalc-plumbing/support`
 - Marketing URL: `https://basemapped.com/products/basecalc-plumbing`
 - Copyright: `2026 BaseMapped LLC`

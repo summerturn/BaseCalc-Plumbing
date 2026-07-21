@@ -14,7 +14,6 @@ import {
   Screen,
   useBottomClearance,
 } from '../components/ui';
-import { FooterAdBanner } from '../components/AdBanner';
 
 const typeLabels: Record<string, string> = {
   pipeVelocity: 'Pipe Velocity',
@@ -58,6 +57,11 @@ const typeColors: Record<string, string> = {
   backflowPressure: CATEGORY.pressure,
 };
 
+function getResultMessage(result: object): string | null {
+  if (!('message' in result)) return null;
+  return typeof result.message === 'string' ? result.message : null;
+}
+
 export function HistoryScreen() {
   const { calculations, deleteCalculation } = useAppStore();
   const c = useColors();
@@ -77,6 +81,7 @@ export function HistoryScreen() {
         ) : (
           items.map((item) => {
             const color = typeColors[item.type] ?? c.amber;
+            const resultMessage = getResultMessage(item.result);
             return (
               <Panel key={item.id} style={{ marginBottom: LIST_CARD_GAP }}>
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
@@ -86,8 +91,8 @@ export function HistoryScreen() {
                     <Mono tone="muted" style={{ fontSize: 11.5, marginTop: 3 }} numberOfLines={1}>
                       {new Date(item.createdAt).toLocaleString()}
                     </Mono>
-                    {item.result?.message ? (
-                      <Body tone="dim" style={{ marginTop: 10 }} numberOfLines={2}>{item.result.message}</Body>
+                    {resultMessage ? (
+                      <Body tone="dim" style={{ marginTop: 10 }} numberOfLines={2}>{resultMessage}</Body>
                     ) : null}
                   </View>
                   <Pressable
@@ -113,7 +118,6 @@ export function HistoryScreen() {
             );
           })
         )}
-        <FooterAdBanner />
       </ListScreenScrollView>
     </Screen>
   );

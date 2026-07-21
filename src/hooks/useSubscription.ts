@@ -5,19 +5,16 @@ import { FREE_TIER_LIMITS } from '../lib/config';
 
 export function useSubscription() {
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
-  const { isPro, clients, invoices } = useAppStore();
+  const { isPro, canAddClient: canAddClientRecord, canAddInvoice: canAddInvoiceRecord } = useAppStore();
 
   const canAddClient = (): boolean => {
-    if (isPro) return true;
-    if (clients.length < FREE_TIER_LIMITS.maxClients) return true;
+    if (canAddClientRecord()) return true;
     showLimitPrompt('client');
     return false;
   };
 
   const canAddInvoice = (): boolean => {
-    if (isPro) return true;
-    const active = invoices.filter((i) => i.status !== 'paid');
-    if (active.length < FREE_TIER_LIMITS.maxActiveInvoices) return true;
+    if (canAddInvoiceRecord()) return true;
     showLimitPrompt('invoice');
     return false;
   };

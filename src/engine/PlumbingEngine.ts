@@ -27,24 +27,54 @@ export interface MetricResult {
 
 export type PipeMaterial = 'copper' | 'cpvc' | 'pvc';
 export type BackflowType = 'PVB' | 'DCV' | 'RPZ';
+export type DrainSlope = '1/8' | '1/4' | '1/2';
 
 // ─── Validation Helpers ──────────────────────────────────────────────
 
 function validatePositive(value: number, name: string): string | null {
-  if (isNaN(value) || value <= 0) return `${name} must be a positive number`;
+  if (!Number.isFinite(value) || value <= 0) return `${name} must be a positive finite number`;
   return null;
 }
 
 function validateNonNegative(value: number, name: string): string | null {
-  if (isNaN(value) || value < 0) return `${name} must be a non-negative number`;
+  if (!Number.isFinite(value) || value < 0) return `${name} must be a non-negative finite number`;
   return null;
 }
 
 function validateRange(value: number, min: number, max: number, name: string): string | null {
-  if (isNaN(value)) return `${name} must be a valid number`;
+  if (!Number.isFinite(value)) return `${name} must be a finite number`;
   if (value < min) return `${name} must be at least ${min}`;
   if (value > max) return `${name} must not exceed ${max}`;
   return null;
+}
+
+function validateWholeNumber(value: number, min: number, max: number, name: string): string | null {
+  const rangeError = validateRange(value, min, max, name);
+  if (rangeError) return rangeError;
+  if (!Number.isInteger(value)) return `${name} must be a whole number`;
+  return null;
+}
+
+function validateFiniteResult(values: number[], name: string): string | null {
+  return values.every(Number.isFinite) ? null : `${name} is outside the supported numeric range`;
+}
+
+function isInputRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function invalidMetricInputs(name: string): MetricResult {
+  return { ok: false, message: `${name} inputs must be provided as an object`, fields: [], details: [] };
+}
+
+function invalidCalculationInputs(name: string): CalculationResult {
+  return {
+    value: 0,
+    unit: 'in nominal',
+    passes: false,
+    message: `${name} inputs must be provided as an object`,
+    details: [],
+  };
 }
 
 function fmt(n: number, d: number): string {
@@ -53,13 +83,40 @@ function fmt(n: number, d: number): string {
 
 // ─── Pipe Data ───────────────────────────────────────────────────────
 
-// Nominal pipe sizes with approximate internal diameters (inches).
 export interface PipeSize {
   nominal: string;
   id: number; // inches
 }
 
-export const PIPE_SIZES: PipeSize[] = [
+interface PipeMaterialSpec {
+  label: string;
+  hazenWilliamsC: number;
+  sizes: readonly PipeSize[];
+}
+
+const COPPER_TYPE_L_SIZES: readonly PipeSize[] = [
+  { nominal: '1/2"', id: 0.545 },
+  { nominal: '3/4"', id: 0.785 },
+  { nominal: '1"', id: 1.025 },
+  { nominal: '1-1/4"', id: 1.265 },
+  { nominal: '1-1/2"', id: 1.505 },
+  { nominal: '2"', id: 1.985 },
+  { nominal: '2-1/2"', id: 2.465 },
+  { nominal: '3"', id: 2.945 },
+  { nominal: '4"', id: 3.905 },
+  { nominal: '6"', id: 5.845 },
+];
+
+const CPVC_CTS_SDR_11_SIZES: readonly PipeSize[] = [
+  { nominal: '1/2"', id: 0.485 },
+  { nominal: '3/4"', id: 0.713 },
+  { nominal: '1"', id: 0.921 },
+  { nominal: '1-1/4"', id: 1.125 },
+  { nominal: '1-1/2"', id: 1.329 },
+  { nominal: '2"', id: 1.739 },
+];
+
+const PVC_SCHEDULE_40_SIZES: readonly PipeSize[] = [
   { nominal: '1/2"', id: 0.622 },
   { nominal: '3/4"', id: 0.824 },
   { nominal: '1"', id: 1.049 },
@@ -72,29 +129,67 @@ export const PIPE_SIZES: PipeSize[] = [
   { nominal: '6"', id: 6.065 },
 ];
 
+export const PIPE_MATERIAL_OPTIONS: readonly PipeMaterial[] = ['copper', 'cpvc', 'pvc'];
+
+const PIPE_MATERIAL_SPECS: Record<PipeMaterial, PipeMaterialSpec> = {
+  copper: { label: 'Copper Type L', hazenWilliamsC: 140, sizes: COPPER_TYPE_L_SIZES },
+  cpvc: { label: 'CPVC CTS SDR 11', hazenWilliamsC: 150, sizes: CPVC_CTS_SDR_11_SIZES },
+  pvc: { label: 'PVC Schedule 40', hazenWilliamsC: 150, sizes: PVC_SCHEDULE_40_SIZES },
+};
+
+// Kept as the default-size export for existing consumers. Hydraulic callers
+// should use pipeSizesForMaterial() when material is user-selectable.
+export const PIPE_SIZES = COPPER_TYPE_L_SIZES;
+
 const GPM_TO_CFS = 1 / 449; // 1 cfs ≈ 449 gpm
 
 function pipeArea(idInches: number): number {
   return Math.PI * Math.pow(idInches / 2, 2) / 144; // ft²
 }
 
-function findPipeSize(minArea: number): PipeSize {
-  for (const size of PIPE_SIZES) {
-    if (pipeArea(size.id) >= minArea) return size;
+function isPipeMaterial(value: unknown): value is PipeMaterial {
+  return typeof value === 'string' && PIPE_MATERIAL_OPTIONS.includes(value as PipeMaterial);
+}
+
+export function pipeSizesForMaterial(material: PipeMaterial): readonly PipeSize[] {
+  return PIPE_MATERIAL_SPECS[material].sizes;
+}
+
+export function pipeMaterialLabel(material: PipeMaterial): string {
+  return PIPE_MATERIAL_SPECS[material].label;
+}
+
+function findPipeSize(minArea: number, material: PipeMaterial): PipeSize | undefined {
+  return pipeSizesForMaterial(material).find((size) => pipeArea(size.id) >= minArea);
+}
+
+function nominalToPipeSize(nominal: unknown, material: PipeMaterial): PipeSize | undefined {
+  return pipeSizesForMaterial(material).find((pipe) => pipe.nominal === nominal);
+}
+
+export function nominalSizeToInches(nominal: unknown): number | undefined {
+  if (typeof nominal !== 'string') return undefined;
+  const value = nominal.trim().replace(/"/g, '');
+  const mixed = value.match(/^(\d+)(?:-|\s+)(\d+)\/(\d+)$/);
+  if (mixed) {
+    const numerator = Number(mixed[2]);
+    const denominator = Number(mixed[3]);
+    if (numerator <= 0 || denominator <= 0 || numerator >= denominator) return undefined;
+    return Number(mixed[1]) + numerator / denominator;
   }
-  return PIPE_SIZES[PIPE_SIZES.length - 1];
-}
 
-function nominalToPipeSize(nominal: string): PipeSize | undefined {
-  return PIPE_SIZES.find((p) => p.nominal === nominal);
-}
+  const fraction = value.match(/^(\d+)\/(\d+)$/);
+  if (fraction) {
+    const numerator = Number(fraction[1]);
+    const denominator = Number(fraction[2]);
+    if (numerator <= 0 || denominator <= 0) return undefined;
+    return numerator / denominator;
+  }
 
-// Hazen-Williams C factors.
-const C_FACTOR: Record<PipeMaterial, number> = {
-  copper: 140,
-  cpvc: 150,
-  pvc: 150,
-};
+  if (!/^\d+(?:\.\d+)?$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
 
 // Hazen-Williams: psi per ft = 4.52 * Q^1.852 / (C^1.852 * D^4.8704)
 function hazenWilliamsPsiPerFt(gpm: number, idInches: number, c: number): number {
@@ -103,41 +198,49 @@ function hazenWilliamsPsiPerFt(gpm: number, idInches: number, c: number): number
 
 // ─── Drainage / Vent Tables ──────────────────────────────────────────
 
-// IPC Table 710.1(1) simplified fixture-unit to drain diameter.
-const DRAINAGE_TABLE: { maxFu: number; size: string }[] = [
-  { maxFu: 1, size: '1-1/4"' },
-  { maxFu: 3, size: '1-1/2"' },
-  { maxFu: 8, size: '2"' },
-  { maxFu: 24, size: '2-1/2"' },
-  { maxFu: 42, size: '3"' },
-  { maxFu: 216, size: '4"' },
-  { maxFu: 480, size: '5"' },
-  { maxFu: 1000, size: '6"' },
+// 2021 IPC Table 710.1(1), building drains and sewers. A missing capacity
+// means that slope/diameter combination is not supported by the table.
+export const DRAIN_SLOPE_OPTIONS: DrainSlope[] = ['1/8', '1/4', '1/2'];
+export const DRAIN_PIPE_SIZES = ['1-1/4"', '1-1/2"', '2"', '2-1/2"', '3"', '4"', '5"', '6"'];
+
+type DrainageRow = {
+  size: string;
+  capacity: Partial<Record<DrainSlope, number>>;
+};
+
+const DRAINAGE_TABLE: DrainageRow[] = [
+  { size: '1-1/4"', capacity: { '1/4': 1, '1/2': 1 } },
+  { size: '1-1/2"', capacity: { '1/4': 3, '1/2': 3 } },
+  { size: '2"', capacity: { '1/4': 21, '1/2': 26 } },
+  { size: '2-1/2"', capacity: { '1/4': 24, '1/2': 31 } },
+  { size: '3"', capacity: { '1/8': 36, '1/4': 42, '1/2': 50 } },
+  { size: '4"', capacity: { '1/8': 180, '1/4': 216, '1/2': 250 } },
+  { size: '5"', capacity: { '1/8': 390, '1/4': 480, '1/2': 575 } },
+  { size: '6"', capacity: { '1/8': 700, '1/4': 840, '1/2': 1000 } },
 ];
 
-function drainageSize(fu: number): string {
-  for (const row of DRAINAGE_TABLE) {
-    if (fu <= row.maxFu) return row.size;
-  }
-  return DRAINAGE_TABLE[DRAINAGE_TABLE.length - 1].size;
+function drainageRow(fixtureUnits: number, slope: DrainSlope, includesWaterCloset: boolean): DrainageRow | undefined {
+  return DRAINAGE_TABLE.find((row) => {
+    const nominal = nominalSizeToInches(row.size);
+    const capacity = row.capacity[slope];
+    if (nominal === undefined || capacity === undefined) return false;
+    if (includesWaterCloset && nominal < 3) return false;
+    return fixtureUnits <= capacity;
+  });
 }
 
-// Simplified vent sizing (IPC vent tables, conservative).
-const VENT_TABLE: { maxFu: number; maxLen: number; size: string }[] = [
-  { maxFu: 1, maxLen: 45, size: '1-1/4"' },
-  { maxFu: 8, maxLen: 30, size: '1-1/2"' },
-  { maxFu: 24, maxLen: 50, size: '2"' },
-  { maxFu: 48, maxLen: 30, size: '2"' },
-  { maxFu: 84, maxLen: 20, size: '2-1/2"' },
-  { maxFu: 216, maxLen: 100, size: '3"' },
-  { maxFu: 480, maxLen: 100, size: '4"' },
-];
+const VENT_PIPE_SIZES = ['1-1/4"', '1-1/2"', '2"', '2-1/2"', '3"', '4"', '5"', '6"'];
 
-function ventSize(fu: number, length: number): string {
-  for (const row of VENT_TABLE) {
-    if (fu <= row.maxFu && length <= row.maxLen) return row.size;
-  }
-  return VENT_TABLE[VENT_TABLE.length - 1].size;
+function roundedVentSize(minimumInches: number): string | undefined {
+  return VENT_PIPE_SIZES.find((size) => {
+    const nominal = nominalSizeToInches(size);
+    return nominal !== undefined && nominal >= minimumInches;
+  });
+}
+
+function nextVentSize(size: string): string | undefined {
+  const index = VENT_PIPE_SIZES.indexOf(size);
+  return index >= 0 ? VENT_PIPE_SIZES[index + 1] : undefined;
 }
 
 // ─── Fixture Units ───────────────────────────────────────────────────
@@ -150,7 +253,8 @@ export interface FixtureCounts {
   kitchenSink?: number;
   dishwasher?: number;
   washingMachine?: number;
-  urinal?: number;
+  urinalStandard?: number;
+  urinalLowFlow?: number;
 }
 
 const FIXTURE_UNITS: Record<keyof FixtureCounts, number> = {
@@ -158,16 +262,17 @@ const FIXTURE_UNITS: Record<keyof FixtureCounts, number> = {
   lavatory: 1,
   bathtub: 2,
   shower: 2,
-  kitchenSink: 1.5,
-  dishwasher: 1.5,
-  washingMachine: 3,
-  urinal: 4,
+  kitchenSink: 2,
+  dishwasher: 2,
+  washingMachine: 2,
+  urinalStandard: 4,
+  urinalLowFlow: 2,
 };
 
 // ─── Gas Pipe Tables ─────────────────────────────────────────────────
 
-// Approximate cubic-feet-per-hour capacity for Schedule 40 iron pipe by length.
-// Based on common low-pressure gas sizing tables.
+// 2021 IFGC Table 402.4(1): natural gas, Schedule 40 metallic pipe, inlet
+// pressure below 2 psi, 0.3 in. w.c. pressure drop, and 0.60 specific gravity.
 const GAS_TABLE: { size: string; capacities: { len: number; cfh: number }[] }[] = [
   {
     size: '1/2"',
@@ -237,163 +342,184 @@ const GAS_TABLE: { size: string; capacities: { len: number; cfh: number }[] }[] 
   },
 ];
 
-function gasCapacityFor(size: string, length: number): number {
+function gasCapacityFor(size: string, length: number): number | undefined {
   const row = GAS_TABLE.find((r) => r.size === size);
-  if (!row) return 0;
-  // Interpolate between bracketing lengths.
-  for (let i = 0; i < row.capacities.length - 1; i++) {
-    const a = row.capacities[i];
-    const b = row.capacities[i + 1];
-    if (length >= a.len && length <= b.len) {
-      const t = (length - a.len) / (b.len - a.len);
-      return a.cfh + (b.cfh - a.cfh) * t;
-    }
-  }
-  if (length <= row.capacities[0].len) return row.capacities[0].cfh;
-  return row.capacities[row.capacities.length - 1].cfh;
+  if (!row || length <= 0) return undefined;
+  return row.capacities.find((entry) => length <= entry.len)?.cfh;
 }
 
-function gasPipeSize(btuPerHour: number, length: number): string {
+function gasPipeMatch(btuPerHour: number, length: number): { size: string; capacityBtuPerHour: number } | undefined {
   const cfh = btuPerHour / 1000; // rough: 1 CFH ≈ 1,000 BTU/hr
   for (const row of GAS_TABLE) {
-    if (gasCapacityFor(row.size, length) >= cfh) return row.size;
+    const capacityCfh = gasCapacityFor(row.size, length);
+    if (capacityCfh !== undefined && capacityCfh >= cfh) {
+      return { size: row.size, capacityBtuPerHour: capacityCfh * 1000 };
+    }
   }
-  return GAS_TABLE[GAS_TABLE.length - 1].size;
-}
-
-// ─── Water Meter Tables ──────────────────────────────────────────────
-
-function waterMeterSize(fu: number): string {
-  if (fu <= 20) return '5/8"';
-  if (fu <= 30) return '3/4"';
-  if (fu <= 50) return '1"';
-  if (fu <= 100) return '1-1/2"';
-  return '2"';
-}
-
-// ─── Backflow Pressure Loss ──────────────────────────────────────────
-
-function backflowLoss(gpm: number, type: BackflowType): number {
-  // Approximate pressure loss (psi) at a given flow.
-  const base: Record<BackflowType, { k: number; offset: number }> = {
-    PVB: { k: 0.0006, offset: 2.5 },
-    DCV: { k: 0.0003, offset: 1.0 },
-    RPZ: { k: 0.0012, offset: 5.0 },
-  };
-  return base[type].offset + base[type].k * Math.pow(gpm, 1.85);
+  return undefined;
 }
 
 // ─── Thermal Expansion ───────────────────────────────────────────────
 
 const EXPANSION_COEFFICIENT: Record<PipeMaterial, number> = {
   copper: 9.4e-6,
-  cpvc: 3.0e-5,
+  cpvc: 3.2e-5,
   pvc: 3.0e-5,
 };
 
 // ─── Calculator Engine ───────────────────────────────────────────────
 
 export const PlumbingEngine = {
-  pipeVelocity(inputs: { gpm: number; pipeSize: string }): MetricResult {
+  pipeVelocity(inputs: { gpm: number; pipeSize: string; material?: PipeMaterial }): MetricResult {
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Pipe velocity');
+    const materialInput: unknown = inputs.material ?? 'copper';
     const errs = [
       validatePositive(inputs.gpm, 'Flow rate'),
     ].filter(Boolean) as string[];
-    const pipe = nominalToPipeSize(inputs.pipeSize);
-    if (!pipe) errs.push(`Unknown pipe size: ${inputs.pipeSize}`);
-    if (errs.length) return { ok: false, message: errs.join('; '), fields: [], details: [] };
+    if (!isPipeMaterial(materialInput)) errs.push(`Unsupported material: ${String(materialInput)}`);
+    const material = isPipeMaterial(materialInput) ? materialInput : 'copper';
+    const spec = PIPE_MATERIAL_SPECS[material];
+    const pipe = nominalToPipeSize(inputs.pipeSize, material);
+    if (!pipe) errs.push(`Unsupported ${spec.label} size: ${String(inputs.pipeSize)}`);
+    if (errs.length || !pipe) return { ok: false, message: errs.join('; '), fields: [], details: [] };
 
-    const area = pipeArea(pipe!.id);
+    const area = pipeArea(pipe.id);
     const velocity = inputs.gpm / (449 * area);
+    const resultError = validateFiniteResult([area, velocity], 'Pipe velocity result');
+    if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
     const limit = 8;
     const passes = velocity <= limit;
 
     return {
       ok: true,
       message: passes
-        ? `${fmt(velocity, 1)} ft/s velocity in ${pipe!.nominal} pipe`
+        ? `${fmt(velocity, 1)} ft/s velocity in ${pipe.nominal} ${spec.label}`
         : `${fmt(velocity, 1)} ft/s exceeds ${limit} ft/s typical limit. Increase pipe size.`,
       fields: [
         { label: 'Velocity', value: fmt(velocity, 1), unit: 'ft/s', emphasis: true },
         { label: 'Flow', value: fmt(inputs.gpm, 1), unit: 'GPM' },
-        { label: 'Pipe size', value: pipe!.nominal },
+        { label: 'Pipe size', value: `${pipe.nominal} ${spec.label}` },
         { label: 'Area', value: fmt(area, 4), unit: 'ft²' },
       ],
       details: [
-        `Area = π × (${pipe!.id}"/2)² ÷ 144 = ${fmt(area, 4)} ft²`,
+        `${spec.label} ID = ${fmt(pipe.id, 3)} in`,
+        `Area = π × (${pipe.id}"/2)² ÷ 144 = ${fmt(area, 4)} ft²`,
         `Velocity = ${fmt(inputs.gpm, 1)} GPM ÷ (449 × ${fmt(area, 4)}) = ${fmt(velocity, 1)} ft/s`,
         `Typical max velocity for water distribution ≈ ${limit} ft/s`,
       ],
     };
   },
 
-  flowRate(inputs: { velocity: number; pipeSize: string }): MetricResult {
+  flowRate(inputs: { velocity: number; pipeSize: string; material?: PipeMaterial }): MetricResult {
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Flow rate');
+    const materialInput: unknown = inputs.material ?? 'copper';
     const errs = [
       validatePositive(inputs.velocity, 'Velocity'),
     ].filter(Boolean) as string[];
-    const pipe = nominalToPipeSize(inputs.pipeSize);
-    if (!pipe) errs.push(`Unknown pipe size: ${inputs.pipeSize}`);
-    if (errs.length) return { ok: false, message: errs.join('; '), fields: [], details: [] };
+    if (!isPipeMaterial(materialInput)) errs.push(`Unsupported material: ${String(materialInput)}`);
+    const material = isPipeMaterial(materialInput) ? materialInput : 'copper';
+    const spec = PIPE_MATERIAL_SPECS[material];
+    const pipe = nominalToPipeSize(inputs.pipeSize, material);
+    if (!pipe) errs.push(`Unsupported ${spec.label} size: ${String(inputs.pipeSize)}`);
+    if (errs.length || !pipe) return { ok: false, message: errs.join('; '), fields: [], details: [] };
 
-    const area = pipeArea(pipe!.id);
+    const area = pipeArea(pipe.id);
     const gpm = inputs.velocity * 449 * area;
+    const resultError = validateFiniteResult([area, gpm], 'Flow rate result');
+    if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
 
     return {
       ok: true,
-      message: `${fmt(gpm, 1)} GPM in ${pipe!.nominal} pipe at ${fmt(inputs.velocity, 1)} ft/s`,
+      message: `${fmt(gpm, 1)} GPM in ${pipe.nominal} ${spec.label} at ${fmt(inputs.velocity, 1)} ft/s`,
       fields: [
         { label: 'Flow', value: fmt(gpm, 1), unit: 'GPM', emphasis: true },
         { label: 'Velocity', value: fmt(inputs.velocity, 1), unit: 'ft/s' },
-        { label: 'Pipe size', value: pipe!.nominal },
+        { label: 'Pipe size', value: `${pipe.nominal} ${spec.label}` },
       ],
       details: [
+        `${spec.label} ID = ${fmt(pipe.id, 3)} in`,
         `Area = ${fmt(area, 4)} ft²`,
         `GPM = ${fmt(inputs.velocity, 1)} ft/s × 449 × ${fmt(area, 4)} = ${fmt(gpm, 1)} GPM`,
       ],
     };
   },
 
-  pipeSizing(inputs: { gpm: number; maxVelocity: number }): CalculationResult {
+  pipeSizing(inputs: { gpm: number; maxVelocity: number; material?: PipeMaterial }): CalculationResult {
+    if (!isInputRecord(inputs)) return invalidCalculationInputs('Pipe sizing');
+    const materialInput: unknown = inputs.material ?? 'copper';
     const errs = [
       validatePositive(inputs.gpm, 'Flow rate'),
       validatePositive(inputs.maxVelocity, 'Maximum velocity'),
     ].filter(Boolean) as string[];
+    if (!isPipeMaterial(materialInput)) errs.push(`Unsupported material: ${String(materialInput)}`);
+    const material = isPipeMaterial(materialInput) ? materialInput : 'copper';
     if (errs.length) return { value: 0, unit: '"', passes: false, message: errs.join('; '), details: [] };
 
+    const spec = PIPE_MATERIAL_SPECS[material];
     const minArea = inputs.gpm / (449 * inputs.maxVelocity);
-    const size = findPipeSize(minArea);
+    const minAreaError = validateFiniteResult([minArea], 'Required pipe area');
+    if (minAreaError) {
+      return { value: 0, unit: 'in nominal', passes: false, message: minAreaError, details: [] };
+    }
+    const size = findPipeSize(minArea, material);
+    if (!size) {
+      const largestSize = spec.sizes[spec.sizes.length - 1]?.nominal ?? 'modeled';
+      return {
+        value: 0,
+        unit: 'in nominal',
+        passes: false,
+        limit: inputs.maxVelocity,
+        message: `Unsupported: required ${spec.label} size exceeds the ${largestSize} table limit.`,
+        details: [
+          `Required area = ${fmt(minArea, 4)} ft²`,
+          'Use an engineered sizing method for a larger size or a different dimensional standard.',
+        ],
+      };
+    }
     const actualVelocity = inputs.gpm / (449 * pipeArea(size.id));
-    const passes = actualVelocity <= inputs.maxVelocity;
+    const velocityError = validateFiniteResult([actualVelocity], 'Selected-pipe velocity');
+    if (velocityError) {
+      return { value: 0, unit: 'in nominal', passes: false, message: velocityError, details: [] };
+    }
+    const nominal = nominalSizeToInches(size.nominal);
+    if (nominal === undefined) {
+      return { value: 0, unit: 'in nominal', passes: false, message: 'Unsupported nominal pipe size.', details: [] };
+    }
 
     return {
-      value: size.id,
-      unit: '" Ø',
-      passes,
+      value: nominal,
+      unit: 'in nominal',
+      passes: true,
       limit: inputs.maxVelocity,
-      message: passes
-        ? `Minimum pipe size: ${size.nominal} (≈ ${fmt(actualVelocity, 1)} ft/s)`
-        : `Could not find a standard pipe size under ${inputs.maxVelocity} ft/s.`,
+      message: `Minimum ${spec.label}: ${size.nominal} (≈ ${fmt(actualVelocity, 1)} ft/s)`,
       details: [
         `Required area = ${fmt(minArea, 4)} ft²`,
-        `Selected ${size.nominal} (ID ${fmt(size.id, 3)}")`,
+        `Selected ${size.nominal} ${spec.label} (ID ${fmt(size.id, 3)}")`,
         `Actual velocity ≈ ${fmt(actualVelocity, 1)} ft/s`,
       ],
     };
   },
 
   pressureDrop(inputs: { gpm: number; pipeSize: string; length: number; material?: PipeMaterial }): MetricResult {
-    const material = inputs.material ?? 'copper';
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Pressure drop');
+    const materialInput: unknown = inputs.material ?? 'copper';
     const errs = [
       validatePositive(inputs.gpm, 'Flow rate'),
       validatePositive(inputs.length, 'Length'),
     ].filter(Boolean) as string[];
-    const pipe = nominalToPipeSize(inputs.pipeSize);
-    if (!pipe) errs.push(`Unknown pipe size: ${inputs.pipeSize}`);
-    if (errs.length) return { ok: false, message: errs.join('; '), fields: [], details: [] };
+    if (!isPipeMaterial(materialInput)) errs.push(`Unsupported material: ${String(materialInput)}`);
+    const material = isPipeMaterial(materialInput) ? materialInput : 'copper';
+    const spec = PIPE_MATERIAL_SPECS[material];
+    const pipe = nominalToPipeSize(inputs.pipeSize, material);
+    if (!pipe) errs.push(`Unsupported ${spec.label} size: ${String(inputs.pipeSize)}`);
+    if (errs.length || !pipe) return { ok: false, message: errs.join('; '), fields: [], details: [] };
 
-    const c = C_FACTOR[material];
-    const psiPerFt = hazenWilliamsPsiPerFt(inputs.gpm, pipe!.id, c);
+    const c = spec.hazenWilliamsC;
+    const psiPerFt = hazenWilliamsPsiPerFt(inputs.gpm, pipe.id, c);
     const total = psiPerFt * inputs.length;
-    const velocity = inputs.gpm / (449 * pipeArea(pipe!.id));
+    const velocity = inputs.gpm / (449 * pipeArea(pipe.id));
+    const resultError = validateFiniteResult([psiPerFt, total, velocity], 'Pressure drop result');
+    if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
 
     return {
       ok: true,
@@ -404,52 +530,101 @@ export const PlumbingEngine = {
         { label: 'Velocity', value: fmt(velocity, 1), unit: 'ft/s' },
       ],
       details: [
-        `Pipe: ${pipe!.nominal} ${material} (C=${c})`,
-        `Hazen-Williams psi/ft = 4.52 × ${fmt(inputs.gpm, 1)}^1.852 ÷ (${c}^1.852 × ${fmt(pipe!.id, 3)}^4.8704)`,
+        `Pipe: ${pipe.nominal} ${spec.label}, ID ${fmt(pipe.id, 3)} in (C=${c})`,
+        `Hazen-Williams psi/ft = 4.52 × ${fmt(inputs.gpm, 1)}^1.852 ÷ (${c}^1.852 × ${fmt(pipe.id, 3)}^4.8704)`,
         `Total drop = ${fmt(psiPerFt, 4)} × ${fmt(inputs.length, 0)} ft = ${fmt(total, 2)} psi`,
       ],
     };
   },
 
-  drainageSizing(inputs: { fixtureUnits: number }): CalculationResult {
-    const err = validatePositive(inputs.fixtureUnits, 'Fixture units');
-    if (err) return { value: 0, unit: '"', passes: false, message: err, details: [] };
+  drainageSizing(inputs: {
+    fixtureUnits: number;
+    slope: DrainSlope;
+    includesWaterCloset: boolean;
+  }): CalculationResult {
+    if (!isInputRecord(inputs)) return invalidCalculationInputs('Drainage sizing');
+    const errs = [validatePositive(inputs.fixtureUnits, 'Fixture units')].filter(Boolean) as string[];
+    if (!DRAIN_SLOPE_OPTIONS.includes(inputs.slope)) errs.push('Select a supported slope: 1/8, 1/4, or 1/2 inch per foot');
+    if (typeof inputs.includesWaterCloset !== 'boolean') errs.push('Specify whether the drain serves a water closet');
+    if (errs.length) return { value: 0, unit: 'in nominal', passes: false, message: errs.join('; '), details: [] };
 
-    const size = drainageSize(inputs.fixtureUnits);
-    const limit = DRAINAGE_TABLE.find((r) => r.size === size)?.maxFu ?? 0;
+    const row = drainageRow(inputs.fixtureUnits, inputs.slope, inputs.includesWaterCloset);
+    if (!row) {
+      return {
+        value: 0,
+        unit: 'in nominal',
+        passes: false,
+        message: 'Unsupported: load exceeds the 6" IPC table boundary for the selected slope.',
+        details: [
+          `Total drainage fixture units = ${fmt(inputs.fixtureUnits, 1)}`,
+          `Slope = ${inputs.slope} in/ft`,
+          'Use the complete adopted-code table or an engineered design.',
+        ],
+      };
+    }
+
+    const nominal = nominalSizeToInches(row.size);
+    const limit = row.capacity[inputs.slope];
+    if (nominal === undefined || limit === undefined) {
+      return { value: 0, unit: 'in nominal', passes: false, message: 'Unsupported IPC table combination.', details: [] };
+    }
 
     return {
-      value: parseFloat(size.replace(/[^0-9.]/g, '')),
-      unit: '"',
+      value: nominal,
+      unit: 'in nominal',
       passes: true,
       limit,
-      message: `Minimum drainage pipe: ${size}`,
+      message: `Minimum building drain: ${row.size}`,
       details: [
-        `Total fixture units = ${fmt(inputs.fixtureUnits, 1)}`,
-        `IPC simplified sizing → ${size}`,
-        `Verify against local amendments and IPC Table 710.1(1).`,
+        `Total drainage fixture units = ${fmt(inputs.fixtureUnits, 1)}`,
+        `Slope = ${inputs.slope} in/ft`,
+        `Selected table capacity = ${limit} DFU`,
+        inputs.includesWaterCloset ? 'Applied 3" minimum for a drain serving a water closet.' : 'No water closet minimum applied.',
+        '2021 IPC Table 710.1(1) basis; verify adopted-code amendments.',
       ],
     };
   },
 
-  ventSizing(inputs: { fixtureUnits: number; ventLength: number }): CalculationResult {
+  ventSizing(inputs: { drainSize: string; ventLength: number }): CalculationResult {
+    if (!isInputRecord(inputs)) return invalidCalculationInputs('Vent sizing');
     const errs = [
-      validatePositive(inputs.fixtureUnits, 'Fixture units'),
       validatePositive(inputs.ventLength, 'Vent length'),
     ].filter(Boolean) as string[];
-    if (errs.length) return { value: 0, unit: '"', passes: false, message: errs.join('; '), details: [] };
+    const drainDiameter = nominalSizeToInches(inputs.drainSize);
+    if (drainDiameter === undefined || !DRAIN_PIPE_SIZES.includes(inputs.drainSize)) {
+      errs.push(`Unsupported drain size: ${inputs.drainSize}`);
+    }
+    if (errs.length) return { value: 0, unit: 'in nominal', passes: false, message: errs.join('; '), details: [] };
 
-    const size = ventSize(inputs.fixtureUnits, inputs.ventLength);
+    const baseSize = roundedVentSize(Math.max(1.25, drainDiameter! / 2));
+    const size = inputs.ventLength > 40 && baseSize ? nextVentSize(baseSize) : baseSize;
+    if (!size) {
+      return {
+        value: 0,
+        unit: 'in nominal',
+        passes: false,
+        message: 'Unsupported: required vent size exceeds the modeled nominal-size range.',
+        details: ['Use the complete adopted-code vent table or an engineered design.'],
+      };
+    }
+
+    const nominal = nominalSizeToInches(size);
+    if (nominal === undefined) {
+      return { value: 0, unit: 'in nominal', passes: false, message: 'Unsupported nominal vent size.', details: [] };
+    }
 
     return {
-      value: parseFloat(size.replace(/[^0-9.]/g, '')),
-      unit: '"',
+      value: nominal,
+      unit: 'in nominal',
       passes: true,
-      message: `Minimum vent: ${size}`,
+      limit: 40,
+      message: `Minimum individual/branch vent: ${size}`,
       details: [
-        `Fixture units = ${fmt(inputs.fixtureUnits, 1)}`,
+        `Drain served = ${inputs.drainSize}`,
         `Developed vent length = ${fmt(inputs.ventLength, 0)} ft`,
-        `Simplified IPC vent sizing → ${size}`,
+        `Base vent = at least one-half the drain diameter and not less than 1-1/4"`,
+        inputs.ventLength > 40 ? 'Increased one nominal size because developed length exceeds 40 ft.' : 'No over-40-ft size increase required.',
+        '2021 IPC Section 906.2 basis. Stack vents and vent stacks require Table 906.1 and are unsupported here.',
       ],
     };
   },
@@ -460,6 +635,7 @@ export const PlumbingEngine = {
     inputBtu: number;
     efficiency: number;
   }): MetricResult {
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Water heater');
     const errs = [
       validatePositive(inputs.tankGallons, 'Tank size'),
       validatePositive(inputs.tempRise, 'Temperature rise'),
@@ -468,10 +644,12 @@ export const PlumbingEngine = {
     ].filter(Boolean) as string[];
     if (errs.length) return { ok: false, message: errs.join('; '), fields: [], details: [] };
 
-    // Recovery GPH = (input BTU/hr × eff) ÷ (8.33 × 60 × ΔT)
-    const recoveryGph = (inputs.inputBtu * inputs.efficiency) / (8.33 * 60 * inputs.tempRise);
+    // BTU/hr divided by BTU required per gallon gives gallons per hour.
+    const recoveryGph = (inputs.inputBtu * inputs.efficiency) / (8.33 * inputs.tempRise);
     // First-hour rating: 70% of tank + recovery.
     const firstHour = inputs.tankGallons * 0.7 + recoveryGph;
+    const resultError = validateFiniteResult([recoveryGph, firstHour], 'Water heater result');
+    if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
 
     return {
       ok: true,
@@ -482,40 +660,65 @@ export const PlumbingEngine = {
         { label: 'Tank', value: fmt(inputs.tankGallons, 0), unit: 'gal' },
       ],
       details: [
-        `Recovery GPH = (${fmt(inputs.inputBtu, 0)} × ${fmt(inputs.efficiency, 2)}) ÷ (8.33 × 60 × ${fmt(inputs.tempRise, 0)})`,
+        `Recovery GPH = (${fmt(inputs.inputBtu, 0)} × ${fmt(inputs.efficiency, 2)}) ÷ (8.33 × ${fmt(inputs.tempRise, 0)})`,
         `First-hour rating = 0.7 × ${fmt(inputs.tankGallons, 0)} + ${fmt(recoveryGph, 1)} = ${fmt(firstHour, 0)} gal`,
       ],
     };
   },
 
   gasPipeSizing(inputs: { btuPerHour: number; length: number }): MetricResult {
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Gas pipe sizing');
     const errs = [
       validatePositive(inputs.btuPerHour, 'BTU/hr'),
       validatePositive(inputs.length, 'Length'),
     ].filter(Boolean) as string[];
     if (errs.length) return { ok: false, message: errs.join('; '), fields: [], details: [] };
+    if (inputs.length > 60) {
+      return {
+        ok: false,
+        message: 'Unsupported: developed length exceeds the 60 ft gas table boundary.',
+        fields: [],
+        details: ['Use the adopted gas-code table for the full developed length and actual gas properties.'],
+      };
+    }
 
-    const size = gasPipeSize(inputs.btuPerHour, inputs.length);
-    const capacity = gasCapacityFor(size, inputs.length) * 1000;
+    const match = gasPipeMatch(inputs.btuPerHour, inputs.length);
+    if (!match) {
+      const largestCapacity = gasCapacityFor(GAS_TABLE[GAS_TABLE.length - 1].size, inputs.length);
+      return {
+        ok: false,
+        message: 'Unsupported: load exceeds the largest pipe capacity in the gas table.',
+        fields: [],
+        details: [
+          `Load = ${fmt(inputs.btuPerHour, 0)} BTU/hr`,
+          largestCapacity === undefined
+            ? 'No capacity is available for this developed length.'
+            : `Largest modeled capacity = ${fmt(largestCapacity * 1000, 0)} BTU/hr`,
+        ],
+      };
+    }
 
     return {
       ok: true,
-      message: `Minimum gas pipe: ${size}`,
+      message: `Table 402.4(1) gas pipe: ${match.size}`,
       fields: [
-        { label: 'Gas pipe', value: size, emphasis: true },
+        { label: 'Gas pipe', value: match.size, emphasis: true },
         { label: 'Load', value: fmt(inputs.btuPerHour, 0), unit: 'BTU/hr' },
-        { label: 'Capacity', value: fmt(capacity, 0), unit: 'BTU/hr' },
+        { label: 'Capacity', value: fmt(match.capacityBtuPerHour, 0), unit: 'BTU/hr' },
       ],
       details: [
         `Load = ${fmt(inputs.btuPerHour, 0)} BTU/hr`,
         `Length = ${fmt(inputs.length, 0)} ft`,
-        `Estimated capacity at ${fmt(inputs.length, 0)} ft ≈ ${fmt(capacity, 0)} BTU/hr`,
-        'Verify with NFPA 54 / local gas tables and actual gas specific gravity.',
+        `Conservative next-length table capacity ≈ ${fmt(match.capacityBtuPerHour, 0)} BTU/hr`,
+        'Fixed table basis: natural gas, Schedule 40 metallic pipe, inlet below 2 psi, 0.3 in. w.c. pressure drop, and 0.60 specific gravity.',
+        'BTU conversion assumes approximately 1,000 BTU/ft³. Length must follow the applicable longest-length or branch-length method.',
+        'Use a different adopted-code table when any basis condition differs.',
       ],
     };
   },
 
   pumpHead(inputs: { staticLift: number; frictionPsi: number; pressurePsi: number }): MetricResult {
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Pump head');
     const errs = [
       validateNonNegative(inputs.staticLift, 'Static lift'),
       validateNonNegative(inputs.frictionPsi, 'Friction pressure'),
@@ -526,6 +729,8 @@ export const PlumbingEngine = {
     const frictionFt = inputs.frictionPsi * 2.31;
     const pressureFt = inputs.pressurePsi * 2.31;
     const tdh = inputs.staticLift + frictionFt + pressureFt;
+    const resultError = validateFiniteResult([frictionFt, pressureFt, tdh], 'Pump head result');
+    if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
 
     return {
       ok: true,
@@ -544,41 +749,58 @@ export const PlumbingEngine = {
     };
   },
 
-  pipeVolume(inputs: { pipeSize: string; length: number }): MetricResult {
+  pipeVolume(inputs: { pipeSize: string; length: number; material?: PipeMaterial }): MetricResult {
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Pipe volume');
+    const materialInput: unknown = inputs.material ?? 'copper';
     const errs = [
       validatePositive(inputs.length, 'Length'),
     ].filter(Boolean) as string[];
-    const pipe = nominalToPipeSize(inputs.pipeSize);
-    if (!pipe) errs.push(`Unknown pipe size: ${inputs.pipeSize}`);
-    if (errs.length) return { ok: false, message: errs.join('; '), fields: [], details: [] };
+    if (!isPipeMaterial(materialInput)) errs.push(`Unsupported material: ${String(materialInput)}`);
+    const material = isPipeMaterial(materialInput) ? materialInput : 'copper';
+    const spec = PIPE_MATERIAL_SPECS[material];
+    const pipe = nominalToPipeSize(inputs.pipeSize, material);
+    if (!pipe) errs.push(`Unsupported ${spec.label} size: ${String(inputs.pipeSize)}`);
+    if (errs.length || !pipe) return { ok: false, message: errs.join('; '), fields: [], details: [] };
 
-    const gallons = Math.PI * Math.pow(pipe!.id / 2, 2) * inputs.length * 7.48 / 144;
+    const gallons = Math.PI * Math.pow(pipe.id / 2, 2) * inputs.length * 7.48 / 144;
+    const resultError = validateFiniteResult([gallons], 'Pipe volume result');
+    if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
 
     return {
       ok: true,
-      message: `${fmt(gallons, 1)} gallons in ${fmt(inputs.length, 0)} ft of ${pipe!.nominal} pipe`,
+      message: `${fmt(gallons, 1)} gallons in ${fmt(inputs.length, 0)} ft of ${pipe.nominal} ${spec.label}`,
       fields: [
         { label: 'Volume', value: fmt(gallons, 1), unit: 'gal', emphasis: true },
         { label: 'Length', value: fmt(inputs.length, 0), unit: 'ft' },
-        { label: 'Pipe size', value: pipe!.nominal },
+        { label: 'Pipe size', value: `${pipe.nominal} ${spec.label}` },
       ],
       details: [
-        `Area = π × (${pipe!.id}"/2)² = ${fmt(Math.PI * Math.pow(pipe!.id / 2, 2), 3)} in²`,
+        `${spec.label} ID = ${fmt(pipe.id, 3)} in`,
+        `Area = π × (${pipe.id}"/2)² = ${fmt(Math.PI * Math.pow(pipe.id / 2, 2), 3)} in²`,
         `Volume = area × length × 7.48 gal/ft³ ÷ 144 = ${fmt(gallons, 1)} gal`,
       ],
     };
   },
 
   waterPressure(inputs: { head?: number; psi?: number }): MetricResult {
-    const hasHead = typeof inputs.head === 'number' && isFinite(inputs.head);
-    const hasPsi = typeof inputs.psi === 'number' && isFinite(inputs.psi);
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Water pressure');
+    const hasHead = typeof inputs.head === 'number';
+    const hasPsi = typeof inputs.psi === 'number';
 
     if (!hasHead && !hasPsi) {
       return { ok: false, message: 'Enter head (ft) or pressure (psi) to convert.', fields: [], details: [] };
     }
+    if (hasHead && hasPsi) {
+      return { ok: false, message: 'Enter either head or pressure, not both.', fields: [], details: [] };
+    }
+    const value = hasHead ? inputs.head : inputs.psi;
+    const error = validateNonNegative(value!, hasHead ? 'Head' : 'Pressure');
+    if (error) return { ok: false, message: error, fields: [], details: [] };
 
     if (hasHead) {
       const psi = inputs.head! / 2.31;
+      const resultError = validateFiniteResult([psi], 'Pressure conversion result');
+      if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
       return {
         ok: true,
         message: `${fmt(inputs.head!, 1)} ft = ${fmt(psi, 1)} psi`,
@@ -591,6 +813,8 @@ export const PlumbingEngine = {
     }
 
     const head = inputs.psi! * 2.31;
+    const resultError = validateFiniteResult([head], 'Head conversion result');
+    if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
     return {
       ok: true,
       message: `${fmt(inputs.psi!, 1)} psi = ${fmt(head, 1)} ft`,
@@ -603,23 +827,29 @@ export const PlumbingEngine = {
   },
 
   pipeExpansion(inputs: { pipeSize: string; length: number; deltaT: number; material?: PipeMaterial }): MetricResult {
-    const material = inputs.material ?? 'copper';
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Pipe expansion');
+    const materialInput: unknown = inputs.material ?? 'copper';
     const errs = [
       validatePositive(inputs.length, 'Length'),
+      Number.isFinite(inputs.deltaT) ? null : 'Temperature change must be a finite number',
     ].filter(Boolean) as string[];
-    const pipe = nominalToPipeSize(inputs.pipeSize);
-    if (!pipe) errs.push(`Unknown pipe size: ${inputs.pipeSize}`);
-    if (errs.length) return { ok: false, message: errs.join('; '), fields: [], details: [] };
+    if (!isPipeMaterial(materialInput)) errs.push(`Unsupported material: ${String(materialInput)}`);
+    const material = isPipeMaterial(materialInput) ? materialInput : 'copper';
+    const pipe = nominalToPipeSize(inputs.pipeSize, material);
+    if (!pipe) errs.push(`Unsupported ${pipeMaterialLabel(material)} size: ${String(inputs.pipeSize)}`);
+    if (errs.length || !pipe) return { ok: false, message: errs.join('; '), fields: [], details: [] };
 
     const alpha = EXPANSION_COEFFICIENT[material];
     const deltaL = alpha * inputs.length * 12 * inputs.deltaT;
+    const resultError = validateFiniteResult([deltaL], 'Pipe expansion result');
+    if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
 
     return {
       ok: true,
       message: `Expansion ≈ ${fmt(deltaL, 2)} in`,
       fields: [
         { label: 'Expansion', value: fmt(deltaL, 2), unit: 'in', emphasis: true },
-        { label: 'Pipe', value: pipe!.nominal },
+        { label: 'Pipe', value: pipe.nominal },
         { label: 'ΔT', value: fmt(inputs.deltaT, 0), unit: '°F' },
       ],
       details: [
@@ -631,11 +861,14 @@ export const PlumbingEngine = {
   },
 
   fixtureUnits(inputs: FixtureCounts): MetricResult {
-    const counts = { ...inputs };
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Fixture unit');
     let total = 0;
     const details: string[] = [];
     for (const key of Object.keys(FIXTURE_UNITS) as (keyof FixtureCounts)[]) {
-      const count = counts[key] ?? 0;
+      const rawCount: unknown = inputs[key];
+      const count = rawCount === undefined ? 0 : typeof rawCount === 'number' ? rawCount : Number.NaN;
+      const error = validateWholeNumber(count, 0, 1000, `${key} count`);
+      if (error) return { ok: false, message: error, fields: [], details: [] };
       if (count > 0) {
         const fu = count * FIXTURE_UNITS[key];
         total += fu;
@@ -649,43 +882,44 @@ export const PlumbingEngine = {
 
     return {
       ok: true,
-      message: `Total fixture units = ${fmt(total, 1)}`,
+      message: `Drainage fixture total = ${fmt(total, 1)} DFU`,
       fields: [
         { label: 'Fixture units', value: fmt(total, 1), emphasis: true },
-        { label: 'Drain size', value: drainageSize(total), emphasis: true },
       ],
-      details,
+      details: [
+        ...details,
+        '2021 IPC Table 709.1 selected fixture rows. Do not also count the same fixtures as a bathroom group.',
+        'Use Drainage Sizing with slope and water-closet inputs for pipe size.',
+      ],
     };
   },
 
   waterMeterSizing(inputs: { fixtureUnits: number }): MetricResult {
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Water meter sizing');
     const err = validatePositive(inputs.fixtureUnits, 'Fixture units');
     if (err) return { ok: false, message: err, fields: [], details: [] };
-
-    const size = waterMeterSize(inputs.fixtureUnits);
-
     return {
-      ok: true,
-      message: `Recommended meter: ${size}`,
-      fields: [
-        { label: 'Meter size', value: size, emphasis: true },
-        { label: 'Fixture units', value: fmt(inputs.fixtureUnits, 1) },
-      ],
+      ok: false,
+      message: 'Unsupported: fixture units alone cannot determine a water meter size.',
+      fields: [],
       details: [
         `Fixture units = ${fmt(inputs.fixtureUnits, 1)}`,
-        'Size per typical utility meter tables. Verify with local water authority.',
+        'Required inputs include the serving utility meter table, available pressure, developed length, elevation, and design demand.',
       ],
     };
   },
 
   irrigationFlow(inputs: { heads: number; gpmPerHead: number }): MetricResult {
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Irrigation flow');
     const errs = [
-      validatePositive(inputs.heads, 'Heads'),
+      validateWholeNumber(inputs.heads, 1, 1000, 'Heads'),
       validatePositive(inputs.gpmPerHead, 'GPM per head'),
     ].filter(Boolean) as string[];
     if (errs.length) return { ok: false, message: errs.join('; '), fields: [], details: [] };
 
     const total = inputs.heads * inputs.gpmPerHead;
+    const resultError = validateFiniteResult([total], 'Irrigation flow result');
+    if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
     return {
       ok: true,
       message: `Zone flow ≈ ${fmt(total, 1)} GPM`,
@@ -699,10 +933,21 @@ export const PlumbingEngine = {
   },
 
   septicTank(inputs: { bedrooms: number; dailyFlowPerBedroom?: number }): MetricResult {
-    const err = validatePositive(inputs.bedrooms, 'Bedrooms');
-    if (err) return { ok: false, message: err, fields: [], details: [] };
-
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Septic tank');
     const dailyFlow = inputs.dailyFlowPerBedroom ?? 150;
+    const errs = [
+      validateWholeNumber(inputs.bedrooms, 1, 6, 'Bedrooms'),
+      validateRange(dailyFlow, 50, 300, 'Flow per bedroom'),
+    ].filter(Boolean) as string[];
+    if (errs.length) {
+      return {
+        ok: false,
+        message: errs.join('; '),
+        fields: [],
+        details: inputs.bedrooms > 6 ? ['Unsupported: local health-department sizing is required above six bedrooms.'] : [],
+      };
+    }
+
     const totalFlow = inputs.bedrooms * dailyFlow;
     let minGallons = 1000;
     if (inputs.bedrooms >= 4) minGallons = 1500;
@@ -711,66 +956,59 @@ export const PlumbingEngine = {
 
     return {
       ok: true,
-      message: `Minimum septic tank ≈ ${fmt(recommended, 0)} gal`,
+      message: `Planning tank volume ≈ ${fmt(recommended, 0)} gal`,
       fields: [
-        { label: 'Min tank', value: fmt(recommended, 0), unit: 'gal', emphasis: true },
+        { label: 'Planning volume', value: fmt(recommended, 0), unit: 'gal', emphasis: true },
         { label: 'Daily flow', value: fmt(totalFlow, 0), unit: 'GPD' },
       ],
       details: [
         `Daily flow = ${inputs.bedrooms} bedrooms × ${dailyFlow} GPD = ${fmt(totalFlow, 0)} GPD`,
-        `Typical minimum = ${fmt(minGallons, 0)} gal`,
-        'Verify with local health department sizing rules.',
+        `Generic planning floor = ${fmt(minGallons, 0)} gal`,
+        'This is not a permit minimum. Select final tank capacity from the current state/local health-department rule and approved design.',
       ],
     };
   },
 
   greaseInterceptor(inputs: { fixtureUnits?: number; gpm?: number }): MetricResult {
-    const hasFu = typeof inputs.fixtureUnits === 'number' && isFinite(inputs.fixtureUnits);
-    const hasGpm = typeof inputs.gpm === 'number' && isFinite(inputs.gpm);
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Grease interceptor');
+    const hasFu = typeof inputs.fixtureUnits === 'number';
+    const hasGpm = typeof inputs.gpm === 'number';
     if (!hasFu && !hasGpm) {
       return { ok: false, message: 'Enter fixture units or GPM to size interceptor.', fields: [], details: [] };
     }
-
-    const gpm = hasGpm ? inputs.gpm! : (inputs.fixtureUnits! * 3);
-    // Grease interceptor capacity in pounds: 2 × GPM (common rule-of-thumb).
-    const pounds = gpm * 2;
-    const gallons = gpm * 15;
-
+    if (hasFu && hasGpm) {
+      return { ok: false, message: 'Enter fixture units or GPM, not both.', fields: [], details: [] };
+    }
+    const inputValue = hasGpm ? inputs.gpm : inputs.fixtureUnits;
+    const err = validatePositive(inputValue!, hasGpm ? 'Flow rate' : 'Fixture units');
+    if (err) return { ok: false, message: err, fields: [], details: [] };
     return {
-      ok: true,
-      message: `Interceptor ≈ ${fmt(pounds, 0)} lb / ${fmt(gallons, 0)} gal`,
-      fields: [
-        { label: 'Capacity', value: fmt(pounds, 0), unit: 'lb', emphasis: true },
-        { label: 'Flow', value: fmt(gpm, 1), unit: 'GPM' },
-      ],
+      ok: false,
+      message: 'Unsupported: flow or fixture units alone cannot determine a compliant grease interceptor.',
+      fields: [],
       details: [
-        `Flow = ${fmt(gpm, 1)} GPM`,
-        `Estimated grease capacity = ${fmt(pounds, 0)} lb`,
-        'Verify with local plumbing code and PDI sizing.',
+        `${hasGpm ? 'Flow' : 'Fixture units'} = ${fmt(inputValue!, 1)}`,
+        'Required inputs depend on the adopted sizing method and can include fixture dimensions, fill depth, drain time, storage period, and manufacturer rating.',
       ],
     };
   },
 
   backflowPressure(inputs: { gpm: number; type: BackflowType }): MetricResult {
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Backflow pressure');
     const errs = [
       validatePositive(inputs.gpm, 'Flow rate'),
     ].filter(Boolean) as string[];
+    if (!(['PVB', 'DCV', 'RPZ'] as BackflowType[]).includes(inputs.type)) errs.push(`Unsupported device type: ${String(inputs.type)}`);
     if (errs.length) return { ok: false, message: errs.join('; '), fields: [], details: [] };
 
-    const loss = backflowLoss(inputs.gpm, inputs.type);
-
     return {
-      ok: true,
-      message: `Pressure loss ≈ ${fmt(loss, 2)} psi`,
-      fields: [
-        { label: 'Pressure loss', value: fmt(loss, 2), unit: 'psi', emphasis: true },
-        { label: 'Device', value: inputs.type },
-        { label: 'Flow', value: fmt(inputs.gpm, 1), unit: 'GPM' },
-      ],
+      ok: false,
+      message: 'Unsupported: flow and device category alone cannot determine backflow pressure loss.',
+      fields: [],
       details: [
-        `Device: ${inputs.type}`,
-        `Flow: ${fmt(inputs.gpm, 1)} GPM`,
-        'Use manufacturer curves for critical designs.',
+        `Device type = ${inputs.type}`,
+        `Flow = ${fmt(inputs.gpm, 1)} GPM`,
+        'Required inputs include manufacturer, model, nominal size, and the certified pressure-loss curve for the selected assembly.',
       ],
     };
   },

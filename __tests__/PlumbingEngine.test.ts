@@ -64,9 +64,24 @@ describe('Pressure Drop Calculator', () => {
 
 describe('Drainage Sizing Calculator', () => {
   test('returns a drainage pipe size', () => {
-    const result = PlumbingEngine.drainageSizing({ fixtureUnits: 10 });
+    const result = PlumbingEngine.drainageSizing({
+      fixtureUnits: 10,
+      slope: '1/4',
+      includesWaterCloset: true,
+    });
     expect(result.passes).toBe(true);
-    expect(result.message).toContain('"');
+    expect(result.value).toBe(3);
+    expect(result.message).toContain('3"');
+  });
+
+  test('fails closed outside the modeled drainage table', () => {
+    const result = PlumbingEngine.drainageSizing({
+      fixtureUnits: 100000,
+      slope: '1/8',
+      includesWaterCloset: true,
+    });
+    expect(result.passes).toBe(false);
+    expect(result.message).toContain('Unsupported');
   });
 });
 
@@ -74,9 +89,16 @@ describe('Drainage Sizing Calculator', () => {
 
 describe('Vent Sizing Calculator', () => {
   test('returns a vent pipe size', () => {
-    const result = PlumbingEngine.ventSizing({ fixtureUnits: 10, ventLength: 30 });
+    const result = PlumbingEngine.ventSizing({ drainSize: '3"', ventLength: 30 });
     expect(result.passes).toBe(true);
-    expect(result.message).toContain('"');
+    expect(result.value).toBe(1.5);
+    expect(result.message).toContain('1-1/2"');
+  });
+
+  test('parses mixed-number drain sizes as nominal dimensions', () => {
+    const result = PlumbingEngine.ventSizing({ drainSize: '2-1/2"', ventLength: 30 });
+    expect(result.passes).toBe(true);
+    expect(result.value).toBe(1.25);
   });
 });
 
@@ -86,7 +108,8 @@ describe('Water Heater Calculator', () => {
   test('estimates first-hour rating', () => {
     const result = PlumbingEngine.waterHeater({ tankGallons: 50, tempRise: 70, inputBtu: 40000, efficiency: 0.8 });
     expect(result.ok).toBe(true);
-    expect(Number(result.fields.find((f) => f.label === 'First hour')?.value)).toBeGreaterThan(0);
+    expect(Number(result.fields.find((f) => f.label === 'Recovery')?.value)).toBeCloseTo(54.9, 1);
+    expect(Number(result.fields.find((f) => f.label === 'First hour')?.value)).toBe(90);
   });
 
   test('validates efficiency range', () => {
@@ -179,10 +202,11 @@ describe('Fixture Units Calculator', () => {
 // ─── Water Meter Sizing ──────────────────────────────────────────────
 
 describe('Water Meter Sizing Calculator', () => {
-  test('recommends a meter size', () => {
+  test('fails closed without utility and pressure inputs', () => {
     const result = PlumbingEngine.waterMeterSizing({ fixtureUnits: 20 });
-    expect(result.ok).toBe(true);
-    expect(result.fields.find((f) => f.label === 'Meter size')?.value).toBeDefined();
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('Unsupported');
+    expect(result.details.join(' ')).toContain('utility meter table');
   });
 });
 
@@ -199,40 +223,48 @@ describe('Irrigation Flow Calculator', () => {
 // ─── Septic Tank ─────────────────────────────────────────────────────
 
 describe('Septic Tank Calculator', () => {
-  test('recommends minimum tank volume', () => {
+  test('returns a planning volume without claiming a permit minimum', () => {
     const result = PlumbingEngine.septicTank({ bedrooms: 3 });
     expect(result.ok).toBe(true);
-    expect(Number(result.fields.find((f) => f.label === 'Min tank')?.value.replace(/,/g, ''))).toBeGreaterThanOrEqual(1000);
+    expect(Number(result.fields.find((f) => f.label === 'Planning volume')?.value.replace(/,/g, ''))).toBeGreaterThanOrEqual(1000);
+    expect(result.details.join(' ')).toContain('not a permit minimum');
   });
 });
 
 // ─── Grease Interceptor ──────────────────────────────────────────────
 
 describe('Grease Interceptor Calculator', () => {
-  test('sizes from fixture units', () => {
+  test('fails closed when only fixture units are known', () => {
     const result = PlumbingEngine.greaseInterceptor({ fixtureUnits: 10 });
-    expect(result.ok).toBe(true);
-    expect(Number(result.fields.find((f) => f.label === 'Capacity')?.value)).toBeGreaterThan(0);
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('Unsupported');
   });
 
-  test('sizes from GPM', () => {
+  test('fails closed when only flow is known', () => {
     const result = PlumbingEngine.greaseInterceptor({ gpm: 20 });
-    expect(result.ok).toBe(true);
-    expect(Number(result.fields.find((f) => f.label === 'Capacity')?.value)).toBeGreaterThan(0);
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('Unsupported');
   });
 });
 
 // ─── Backflow Pressure ───────────────────────────────────────────────
 
 describe('Backflow Pressure Calculator', () => {
-  test('estimates RPZ pressure loss', () => {
+  test('requires a manufacturer pressure-loss curve for RPZ', () => {
     const result = PlumbingEngine.backflowPressure({ gpm: 15, type: 'RPZ' });
-    expect(result.ok).toBe(true);
-    expect(Number(result.fields.find((f) => f.label === 'Pressure loss')?.value)).toBeGreaterThan(0);
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('Unsupported');
+    expect(result.details.join(' ')).toContain('manufacturer');
   });
 
-  test('estimates DCV pressure loss', () => {
+  test('requires a manufacturer pressure-loss curve for DCV', () => {
     const result = PlumbingEngine.backflowPressure({ gpm: 15, type: 'DCV' });
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+  });
+
+  test('rejects malformed runtime payloads without throwing', () => {
+    const result = PlumbingEngine.backflowPressure(null as never);
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('object');
   });
 });
