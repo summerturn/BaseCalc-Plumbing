@@ -62,6 +62,7 @@ DEVICE-LOCAL FOR THE FIELD
 • No BaseCalc account or cloud sync.
 • Job contact, worksheet, setting, and calculation data stays on this device, protected by your device security.
 • There is no BaseCalc cloud option.
+• Lifetime Pro is a one-time purchase; prior monthly and yearly subscriptions remain valid and restorable.
 • Dark and light themes with a high-contrast job-site interface.
 
 BaseCalc Plumbing is a professional reference tool. Always verify against current industry standards, manufacturer data, and local codes. The authority having jurisdiction has the final say.
