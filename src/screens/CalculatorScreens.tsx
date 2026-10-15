@@ -65,6 +65,8 @@ const CALCS: CalcDef[] = [
   { key: 'pipe-velocity', title: 'Pipe Velocity', subtitle: 'Material-specific ID', icon: 'water-drop', code: 'V = GPM ÷ A', route: 'PipeVelocity', color: CATEGORY.water },
   { key: 'flow-rate', title: 'Flow Rate', subtitle: 'Material-specific ID', icon: 'opacity', code: 'GPM = V × A', route: 'FlowRate', color: CATEGORY.water },
   { key: 'pipe-volume', title: 'Pipe Volume', subtitle: 'Material-specific ID', icon: 'invert-colors', code: 'Gal = area × L', route: 'PipeVolume', color: CATEGORY.water },
+  { key: 'pipe-fill-time', title: 'Pipe Fill Time', subtitle: 'Volume ÷ fill flow', icon: 'timer', code: 'min = gal ÷ GPM', route: 'PipeFillTime', color: CATEGORY.water, proOnly: true },
+  { key: 'drain-fall', title: 'Drain Fall', subtitle: 'Run and selected slope', icon: 'south-east', code: 'Fall = L × slope', route: 'DrainFall', color: CATEGORY.drainage },
   { key: 'water-pressure', title: 'Water Pressure', subtitle: 'Head ↔ psi', icon: 'compress', code: '1 psi = 2.31 ft', route: 'WaterPressure', color: CATEGORY.pressure },
   { key: 'pipe-sizing', title: 'Pipe Sizing', subtitle: 'Select material', icon: 'line-weight', code: 'Area = GPM ÷ V', route: 'PipeSizing', color: CATEGORY.water, proOnly: true },
   { key: 'pressure-drop', title: 'Pressure Drop', subtitle: 'Material-specific ID', icon: 'trending-down', code: 'psi/ft', route: 'PressureDrop', color: CATEGORY.pressure, proOnly: true },
@@ -934,4 +936,44 @@ export function BackflowPressureScreen() {
       <MetricReadout result={result} accent={CATEGORY.pressure} />
     </CalculatorShell>
   );
+}
+
+export function PipeFillTimeScreen() {
+  const addCalculation = useAppStore((state) => state.addCalculation);
+  const [inputs, setInputs] = useState({ material: 'copper' as PipeMaterial, pipeSize: '3/4"', length: 100, gpm: 5 });
+  const [result, setResult] = useState<MetricResult | null>(null);
+  const calculate = () => {
+    const next = PlumbingEngine.pipeFillTime(inputs);
+    setResult(next);
+    if (next.ok) addCalculation({ type: 'pipeFillTime', inputs, result: next });
+  };
+  return <CalculatorShell title="Pipe Fill Time" code="Volume ÷ constant fill flow">
+    <Panel>
+      <Segmented label="Material" value={inputs.material} options={PIPE_MATERIAL_OPTIONS} onChange={(material) => setInputs(updatePipeMaterial(inputs, material))} format={pipeMaterialLabel} />
+      <Segmented label="Pipe size" value={inputs.pipeSize} options={pipeSizeOptions(inputs.material)} onChange={(pipeSize) => setInputs({ ...inputs, pipeSize })} />
+      <Field label="Pipe length" suffix="ft" value={String(inputs.length)} keyboardType="decimal-pad" onChangeText={(text) => setInputs({ ...inputs, length: Number(text) || 0 })} />
+      <Field label="Fill flow" suffix="GPM" value={String(inputs.gpm)} keyboardType="decimal-pad" onChangeText={(text) => setInputs({ ...inputs, gpm: Number(text) || 0 })} />
+      <PrimaryButton label="Calculate" icon="timer" onPress={calculate} />
+    </Panel>
+    <MetricReadout result={result} accent={CATEGORY.water} />
+  </CalculatorShell>;
+}
+
+export function DrainFallScreen() {
+  const addCalculation = useAppStore((state) => state.addCalculation);
+  const [inputs, setInputs] = useState({ length: 40, slope: '1/4' as DrainSlope });
+  const [result, setResult] = useState<MetricResult | null>(null);
+  const calculate = () => {
+    const next = PlumbingEngine.drainFall(inputs);
+    setResult(next);
+    if (next.ok) addCalculation({ type: 'drainFall', inputs, result: next });
+  };
+  return <CalculatorShell title="Drain Fall" code="Length × selected fall per foot">
+    <Panel>
+      <Field label="Horizontal run" suffix="ft" value={String(inputs.length)} keyboardType="decimal-pad" onChangeText={(text) => setInputs({ ...inputs, length: Number(text) || 0 })} />
+      <Segmented label="Slope" value={inputs.slope} options={DRAIN_SLOPE_OPTIONS} onChange={(slope) => setInputs({ ...inputs, slope })} format={(slope) => `${slope} in/ft`} />
+      <PrimaryButton label="Calculate" icon="south-east" onPress={calculate} />
+    </Panel>
+    <MetricReadout result={result} accent={CATEGORY.drainage} />
+  </CalculatorShell>;
 }

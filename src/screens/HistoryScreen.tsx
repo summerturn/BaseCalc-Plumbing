@@ -1,4 +1,5 @@
 import { Pressable, View } from 'react-native';
+import { useState } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAppStore } from '../store/useAppStore';
 import { CATEGORY } from '../theme/appTheme';
@@ -34,6 +35,8 @@ const typeLabels: Record<string, string> = {
   septicTank: 'Septic Tank',
   greaseInterceptor: 'Grease Interceptor',
   backflowPressure: 'Backflow Pressure',
+  pipeFillTime: 'Pipe Fill Time',
+  drainFall: 'Drain Fall',
 };
 
 const typeColors: Record<string, string> = {
@@ -55,6 +58,8 @@ const typeColors: Record<string, string> = {
   septicTank: CATEGORY.drainage,
   greaseInterceptor: CATEGORY.drainage,
   backflowPressure: CATEGORY.pressure,
+  pipeFillTime: CATEGORY.water,
+  drainFall: CATEGORY.drainage,
 };
 
 function getResultMessage(result: object): string | null {
@@ -63,7 +68,8 @@ function getResultMessage(result: object): string | null {
 }
 
 export function HistoryScreen() {
-  const { calculations, deleteCalculation } = useAppStore();
+  const { calculations, clients, deleteCalculation, assignCalculationToClient } = useAppStore();
+  const [assigningId, setAssigningId] = useState<string | null>(null);
   const c = useColors();
   const bottomClearance = useBottomClearance();
 
@@ -114,6 +120,15 @@ export function HistoryScreen() {
                     <MaterialIcons name="delete-outline" size={20} color={c.textMuted} />
                   </Pressable>
                 </View>
+                <Pressable onPress={() => setAssigningId(assigningId === item.id ? null : item.id)} style={{ marginTop: 10 }}>
+                  <Body tone="dim">Job contact: {clients.find((client) => client.id === item.clientId)?.name || 'Unassigned'} · Change</Body>
+                </Pressable>
+                {assigningId === item.id ? (
+                  <View style={{ marginTop: 8 }}>
+                    <Pressable onPress={() => { assignCalculationToClient(item.id); setAssigningId(null); }} style={{ paddingVertical: 7 }}><Body tone="muted">Unassigned</Body></Pressable>
+                    {clients.map((client) => <Pressable key={client.id} onPress={() => { assignCalculationToClient(item.id, client.id); setAssigningId(null); }} style={{ paddingVertical: 7 }}><Body tone="dim">{client.name}</Body></Pressable>)}
+                  </View>
+                ) : null}
               </Panel>
             );
           })

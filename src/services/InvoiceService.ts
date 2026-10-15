@@ -1,4 +1,4 @@
-import type { Invoice, InvoiceLineItem, CompanySettings } from '../store/useAppStore';
+import type { Invoice, InvoiceLineItem, CompanySettings, CalculationRecord } from '../store/useAppStore';
 import { Platform } from 'react-native';
 import { File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
@@ -15,7 +15,7 @@ function escapeHtml(value: string | number | undefined | null): string {
     .replace(/'/g, '&#039;');
 }
 
-function generateInvoiceHTML(invoice: Invoice, company: CompanySettings, clientName: string): string {
+export function generateInvoiceHTML(invoice: Invoice, company: CompanySettings, clientName: string, calculations: CalculationRecord[] = [], fullReport = false): string {
   const worksheetNumber = invoice.invoiceNumber.replace(/^INV-/, 'JOB-');
   const lineItemsHTML = invoice.lineItems.map((item, index) => `
     <div class="work-row">
@@ -29,6 +29,23 @@ function generateInvoiceHTML(invoice: Invoice, company: CompanySettings, clientN
 
   const status = invoice.status;
   const statusLabel = status === 'paid' ? 'closed' : status === 'sent' ? 'ready' : status === 'overdue' ? 'review' : 'draft';
+  const calculationHTML = fullReport ? `
+    <div class="section-title">Saved calculations for this job contact (${calculations.length})</div>
+    ${calculations.length ? calculations.map((calc) => {
+      const inputs = Object.entries(calc.inputs).map(([key, value]) => `${escapeHtml(key)}: ${escapeHtml(String(value ?? ''))}`).join(' · ');
+      const result = calc.result as { message?: unknown; fields?: unknown; details?: unknown };
+      const fields = Array.isArray(result.fields) ? result.fields.filter((field): field is { label: string; value: string; unit?: string } =>
+        typeof field === 'object' && field !== null && typeof field.label === 'string' && typeof field.value === 'string') : [];
+      const details = Array.isArray(result.details) ? result.details.filter((detail): detail is string => typeof detail === 'string') : [];
+      return `<div class="work-row"><div class="work-copy">
+        <p class="work-title">${escapeHtml(calc.type)} · ${escapeHtml(new Date(calc.createdAt).toLocaleDateString())}</p>
+        <p class="work-meta">Inputs: ${inputs || 'None recorded'}</p>
+        <p class="work-meta">Result: ${escapeHtml(typeof result.message === 'string' ? result.message : '')}</p>
+        ${fields.map((field) => `<p class="work-meta">${escapeHtml(field.label)}: ${escapeHtml(field.value)} ${escapeHtml(field.unit)}</p>`).join('')}
+        ${details.map((detail) => `<p class="work-meta">${escapeHtml(detail)}</p>`).join('')}
+      </div></div>`;
+    }).join('') : '<p class="work-meta">No calculations saved for this job contact.</p>'}
+  ` : '';
 
   return `
 <!DOCTYPE html>
@@ -85,7 +102,7 @@ function generateInvoiceHTML(invoice: Invoice, company: CompanySettings, clientN
             <p>${escapeHtml(company.email)}</p>
           </div>
           <div class="ticket-meta">
-            <h2>JOB WORKSHEET</h2>
+            <h2>${fullReport ? 'JOB REPORT' : 'JOB WORKSHEET'}</h2>
             <p><strong>${escapeHtml(worksheetNumber)}</strong></p>
             <p>Date: ${new Date(invoice.date).toLocaleDateString()}</p>
             <span class="status-badge status-${status}">${statusLabel}</span>
@@ -102,6 +119,8 @@ function generateInvoiceHTML(invoice: Invoice, company: CompanySettings, clientN
           ${lineItemsHTML || '<div class="work-row"><div class="check-cell">1</div><div class="work-copy"><p class="work-title">No work items entered</p><p class="work-meta">Quantity: 0</p></div></div>'}
         </div>
 
+        ${calculationHTML}
+
         ${invoice.notes ? `
         <div class="notes-section">
           <h3>Site Notes</h3>
@@ -114,7 +133,7 @@ function generateInvoiceHTML(invoice: Invoice, company: CompanySettings, clientN
         </div>
 
         <div class="footer">
-          <p>Job worksheet only. No prices, tax, or payment terms are stored here.</p>
+          <p>Field record only. No prices, tax, or payment terms are stored here.</p>
           <p style="margin-top: 4px; color: #0284C7; font-weight: 600;">Generated with BaseCalc Plumbing</p>
         </div>
       </div>
@@ -128,10 +147,10 @@ function generateInvoiceHTML(invoice: Invoice, company: CompanySettings, clientN
 // ─── PDF Service ─────────────────────────────────────────────────────
 
 export const InvoiceService = {
-  async generatePDF(invoice: Invoice, company: CompanySettings, clientName: string): Promise<string | null> {
+  async generatePDF(invoice: Invoice, company: CompanySettings, clientName: string, calculations: CalculationRecord[] = [], fullReport = false): Promise<string | null> {
     let temporaryFile: File | null = null;
     try {
-      const html = generateInvoiceHTML(invoice, company, clientName);
+      const html = generateInvoiceHTML(invoice, company, clientName, calculations, fullReport);
 
       if (Platform.OS === 'web') {
         // On web, create a blob and download
@@ -139,7 +158,7 @@ export const InvoiceService = {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `${invoice.invoiceNumber.replace(/^INV-/, 'JOB-')}.html`;
+        link.download = `${invoice.invoiceNumber.replace(/^INV-/, 'JOB-')}${fullReport ? '-report' : ''}.html`;
         link.click();
         URL.revokeObjectURL(url);
         return null;
@@ -150,7 +169,7 @@ export const InvoiceService = {
       if (!uri) return null;
       temporaryFile = new File(uri);
       const safeId = invoice.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const destination = new File(Paths.document, `basecalc-plumbing-worksheet-${safeId}.pdf`);
+      const destination = new File(Paths.document, `basecalc-plumbing-${fullReport ? 'report' : 'worksheet'}-${safeId}.pdf`);
       await temporaryFile.move(destination, { overwrite: true });
       return destination.uri;
     } catch (error) {

@@ -268,3 +268,22 @@ describe('Backflow Pressure Calculator', () => {
     expect(result.message).toContain('object');
   });
 });
+
+describe('Pipe Fill Time Calculator', () => {
+  test('uses material-specific volume and flow, rejecting zero flow', () => {
+    const result = PlumbingEngine.pipeFillTime({ pipeSize: '3/4"', length: 100, gpm: 5, material: 'copper' });
+    expect(result.ok).toBe(true);
+    expect(result.fields[0].value).toBe('0.5');
+    expect(PlumbingEngine.pipeFillTime({ pipeSize: '3/4"', length: 100, gpm: 0 }).ok).toBe(false);
+    expect(PlumbingEngine.pipeFillTime({ pipeSize: '3/4"', length: 100, gpm: 5, material: 'pvc' }).fields[1].value).not.toBe(result.fields[1].value);
+  });
+});
+
+describe('Drain Fall Calculator', () => {
+  test('calculates fall and rejects invalid slopes and lengths', () => {
+    expect(PlumbingEngine.drainFall({ length: 40, slope: '1/4' }).fields[0].value).toBe('10.00');
+    expect(PlumbingEngine.drainFall({ length: 40, slope: '1/8' }).fields[0].value).toBe('5.00');
+    expect(PlumbingEngine.drainFall({ length: 0, slope: '1/4' }).ok).toBe(false);
+    expect(PlumbingEngine.drainFall({ length: 40, slope: '1/3' as '1/4' }).ok).toBe(false);
+  });
+});

@@ -15,6 +15,7 @@ export const PREMIUM_CALCULATOR_ROUTES = [
   'SepticTank',
   'GreaseInterceptor',
   'BackflowPressure',
+  'PipeFillTime',
 ] as const;
 
 const premiumRouteSet = new Set<string>(PREMIUM_CALCULATOR_ROUTES);

@@ -3,6 +3,10 @@ import { Alert, Pressable, View, useWindowDimensions } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
 import { useAppStore } from '../store/useAppStore';
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
+import { createLocalBackup, parseLocalBackup, MAX_BACKUP_BYTES } from '../lib/localBackup';
 import { useAppTheme, useColors } from '../theme/useAppTheme';
 import type { ThemeMode } from '../theme/appTheme';
 import { Body, Label, Mono, Small } from '../components/Type';
@@ -47,6 +51,7 @@ export function SettingsScreen() {
   const [form, setForm] = useState({ ...company });
   const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [transferring, setTransferring] = useState(false);
   const stackLocationFields = width < 360;
 
   const handleSave = () => {
@@ -81,6 +86,59 @@ export function SettingsScreen() {
         },
       ]
     );
+  };
+
+  const exportBackup = async () => {
+    if (transferring) return;
+    setTransferring(true);
+    try {
+      const state = useAppStore.getState();
+      const json = createLocalBackup(state);
+      const file = new File(Paths.cache, `basecalc-plumbing-backup-${new Date().toISOString().slice(0, 10)}.json`);
+      file.create({ overwrite: true });
+      file.write(json);
+      if (!(await Sharing.isAvailableAsync())) throw new Error('File sharing is unavailable on this device.');
+      await Sharing.shareAsync(file.uri, { mimeType: 'application/json', dialogTitle: 'Save BaseCalc Plumbing backup' });
+    } catch (error) {
+      Alert.alert('Backup failed', error instanceof Error ? error.message : 'Could not export the backup.');
+    } finally { setTransferring(false); }
+  };
+
+  const restoreBackup = async () => {
+    if (transferring) return;
+    setTransferring(true);
+    let confirmationShown = false;
+    let decisionMade = false;
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({ type: 'application/json', copyToCacheDirectory: true });
+      if (picked.canceled || !picked.assets[0]) return;
+      const asset = picked.assets[0];
+      if (asset.size && asset.size > MAX_BACKUP_BYTES) throw new Error('Backup is too large for this app.');
+      const records = parseLocalBackup(await new File(asset.uri).text());
+      Alert.alert(
+        'Replace local records?',
+        `This will replace this device's ${useAppStore.getState().clients.length} contacts, worksheets, calculations, templates, and company details with ${records.clients.length} contacts, ${records.invoices.length} worksheets, and ${records.calculations.length} calculations from the backup. Your Pro access stays tied to the app store.`,
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => { decisionMade = true; setTransferring(false); } },
+          { text: 'Replace records', style: 'destructive', onPress: async () => {
+            decisionMade = true;
+            try {
+              await useAppStore.getState().restoreLocalRecords(records);
+              setForm({ ...records.company });
+              Alert.alert('Restore complete', 'Local records were restored. Refresh Pro access from the store if needed.');
+            } catch {
+              Alert.alert('Restore failed', 'Local records could not be replaced. Please try again.');
+            } finally {
+              setTransferring(false);
+            }
+          } },
+        ],
+        { cancelable: true, onDismiss: () => { if (!decisionMade) setTransferring(false); } }
+      );
+      confirmationShown = true;
+    } catch (error) {
+      Alert.alert('Restore failed', error instanceof Error ? error.message : 'Could not read the backup. Nothing was restored.');
+    } finally { if (!confirmationShown) setTransferring(false); }
   };
 
   return (
@@ -149,6 +207,14 @@ export function SettingsScreen() {
         <PrimaryButton label={saved ? 'Saved ✓' : 'Save settings'} icon={saved ? undefined : 'save'} onPress={handleSave} />
 
         <Section title="Local data">
+          <Panel style={{ marginTop: SECTION_GAP, marginBottom: 12 }}>
+            <Body tone="primary">Backup and device transfer</Body>
+            <Small tone="muted" style={{ marginTop: 5, marginBottom: 14 }}>
+              Save a local JSON backup through your device share sheet. Restore replaces this device's records after confirmation. Pro access and generated PDF files are excluded.
+            </Small>
+            <SecondaryButton label={transferring ? 'Working…' : 'Export backup'} icon="ios-share" onPress={() => { void exportBackup(); }} disabled={transferring} />
+            <View style={{ marginTop: 10 }}><SecondaryButton label="Restore backup" icon="file-open" onPress={() => { void restoreBackup(); }} disabled={transferring} /></View>
+          </Panel>
           <Panel style={{ marginTop: SECTION_GAP }}>
             <Body tone="primary">Delete data on this device</Body>
             <Small tone="muted" style={{ marginTop: 5, marginBottom: 14 }}>
@@ -159,7 +225,7 @@ export function SettingsScreen() {
                 label={deleting ? 'Deleting…' : 'Delete all local data'}
                 icon="delete-forever"
                 tint={c.fail}
-                onPress={deleting ? () => {} : confirmDeleteAllData}
+                onPress={deleting || transferring ? () => {} : confirmDeleteAllData}
               />
             </View>
           </Panel>

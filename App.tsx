@@ -30,6 +30,8 @@ import {
   SepticTankScreen,
   GreaseInterceptorScreen,
   BackflowPressureScreen,
+  PipeFillTimeScreen,
+  DrainFallScreen,
 } from './src/screens/CalculatorScreens';
 import { ClientsScreen, AddClientScreen, EditClientScreen, ClientDetailScreen } from './src/screens/ClientsScreen';
 import { JobTicketsScreen, CreateJobTicketScreen, JobTicketDetailScreen } from './src/screens/InvoicesScreen';
@@ -72,6 +74,8 @@ function CalculatorStack() {
       <Stack.Screen name="GasPipeSizing" component={GasPipeSizingScreen} />
       <Stack.Screen name="PumpHead" component={PumpHeadScreen} />
       <Stack.Screen name="PipeVolume" component={PipeVolumeScreen} />
+      <Stack.Screen name="PipeFillTime" component={PipeFillTimeScreen} />
+      <Stack.Screen name="DrainFall" component={DrainFallScreen} />
       <Stack.Screen name="WaterPressure" component={WaterPressureScreen} />
       <Stack.Screen name="PipeExpansion" component={PipeExpansionScreen} />
       <Stack.Screen name="FixtureUnits" component={FixtureUnitsScreen} />

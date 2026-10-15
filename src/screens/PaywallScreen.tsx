@@ -46,7 +46,7 @@ const FREE_ACCESS: AccessSection = {
   subtitle: 'Core plumbing math',
   icon: 'water-drop',
   accent: '#38BDF8',
-  items: ['Pipe Velocity', 'Flow Rate', 'Pipe Volume', 'Water Pressure'],
+  items: ['Pipe Velocity', 'Flow Rate', 'Pipe Volume', 'Water Pressure', 'Drain Fall'],
 };
 
 const PRO_ACCESS: AccessSection = {
@@ -55,7 +55,7 @@ const PRO_ACCESS: AccessSection = {
   icon: 'workspace-premium',
   accent: '#FFB020',
   items: [
-    'Pipe sizing and pressure drop',
+    'Pipe sizing, pressure drop, fill time',
     'Drainage, vent, fixture units',
     'Water heater, pump, gas pipe',
     'Backflow, septic, grease, irrigation',
@@ -64,7 +64,8 @@ const PRO_ACCESS: AccessSection = {
 
 const PRO_FEATURES = [
   'Unlock every plumbing calculator in the app',
-  'Keep the four most-used pipe and pressure checks free',
+  'Export complete job reports with selected calculation inputs and results',
+  'Save and reuse job worksheet templates',
   'Use job history, contacts, and worksheets without free-tier limits',
   'Keep local job history, contacts, and worksheets available on device',
   'Pay once — no recurring charge, ever',

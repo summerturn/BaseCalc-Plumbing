@@ -51,6 +51,8 @@ export interface Invoice {
   updatedAt: string;
   synced: boolean;
   pdfPath?: string;
+  reportPdfPath?: string;
+  calculationIds?: string[];
 }
 
 export interface CalculationRecord {
@@ -74,7 +76,9 @@ export interface CalculationRecord {
     | 'irrigationFlow'
     | 'septicTank'
     | 'greaseInterceptor'
-    | 'backflowPressure';
+    | 'backflowPressure'
+    | 'pipeFillTime'
+    | 'drainFall';
   inputs: object;
   result: object;
   createdAt: string;
@@ -98,6 +102,14 @@ export interface PendingDeletes {
   clients: string[];
   invoices: string[];
   calculations: string[];
+}
+
+export interface JobTemplate {
+  id: string;
+  name: string;
+  lineItems: Pick<InvoiceLineItem, 'description' | 'quantity'>[];
+  notes: string;
+  createdAt: string;
 }
 
 export interface AppState {
@@ -127,6 +139,11 @@ export interface AppState {
   calculations: CalculationRecord[];
   addCalculation: (calc: Omit<CalculationRecord, 'id' | 'createdAt' | 'synced'>) => void;
   deleteCalculation: (id: string) => void;
+  assignCalculationToClient: (id: string, clientId?: string) => void;
+  jobTemplates: JobTemplate[];
+  saveJobTemplate: (name: string, invoice: Invoice) => void;
+  deleteJobTemplate: (id: string) => void;
+  restoreLocalRecords: (records: Pick<AppState, 'clients' | 'invoices' | 'calculations' | 'company' | 'jobTemplates'>) => Promise<void>;
 
   // Company
   company: CompanySettings;
@@ -170,6 +187,7 @@ function migratePersistedState(persistedState: unknown): unknown {
       ? state.invoices.filter((invoice) => isRecord(invoice) && Array.isArray(invoice.lineItems))
       : [],
     calculations: Array.isArray(state.calculations) ? state.calculations.filter(isRecord) : [],
+    jobTemplates: Array.isArray(state.jobTemplates) ? state.jobTemplates.filter(isRecord) : [],
     themeMode: state.themeMode === 'light' || state.themeMode === 'dark' ? state.themeMode : DEFAULT_THEME_MODE,
     isPro: state.isPro === true && verificationAge >= 0 && verificationAge <= PRO_OFFLINE_GRACE_MS,
     proLastVerifiedAt: verifiedAt,
@@ -200,31 +218,42 @@ function defaultCompanySettings(): CompanySettings {
   return { ...DEFAULT_COMPANY_SETTINGS };
 }
 
+let storageWriteQueue: Promise<void> = Promise.resolve();
+
+function queueStorageWrite(write: () => Promise<void>): Promise<void> {
+  const pending = storageWriteQueue.then(write);
+  storageWriteQueue = pending.catch(() => {});
+  return pending;
+}
+
 const appStorage = {
   getItem: async (name: string) => {
+    await storageWriteQueue;
     const value = await AsyncStorage.getItem(name);
     if (value !== null || name !== APP_STORAGE_NAME) return value;
 
     for (const legacyStorageName of LEGACY_STORAGE_NAMES) {
       const legacyValue = await AsyncStorage.getItem(legacyStorageName);
       if (legacyValue === null) continue;
-      await AsyncStorage.setItem(APP_STORAGE_NAME, legacyValue);
-      for (const staleStorageName of LEGACY_STORAGE_NAMES) {
-        await AsyncStorage.removeItem(staleStorageName);
-      }
+      await queueStorageWrite(async () => {
+        await AsyncStorage.setItem(APP_STORAGE_NAME, legacyValue);
+        for (const staleStorageName of LEGACY_STORAGE_NAMES) {
+          await AsyncStorage.removeItem(staleStorageName);
+        }
+      });
       return legacyValue;
     }
     return null;
   },
-  setItem: (name: string, value: string) => AsyncStorage.setItem(name, value),
-  removeItem: async (name: string) => {
+  setItem: (name: string, value: string) => queueStorageWrite(() => AsyncStorage.setItem(name, value)),
+  removeItem: (name: string) => queueStorageWrite(async () => {
     await AsyncStorage.removeItem(name);
     if (name === APP_STORAGE_NAME) {
       for (const legacyStorageName of LEGACY_STORAGE_NAMES) {
         await AsyncStorage.removeItem(legacyStorageName);
       }
     }
-  },
+  }),
 };
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -311,6 +340,7 @@ export const useAppStore = create<AppState>()(
       clients: [],
       invoices: [],
       calculations: [],
+      jobTemplates: [],
       company: defaultCompanySettings(),
       themeMode: DEFAULT_THEME_MODE,
       isOnline: true,
@@ -354,7 +384,7 @@ export const useAppStore = create<AppState>()(
         const calculationIds = state.calculations.filter((c) => c.clientId === id).map((c) => c.id);
         const pdfPaths = state.invoices
           .filter((invoice) => invoice.clientId === id)
-          .map((invoice) => invoice.pdfPath)
+          .flatMap((invoice) => [invoice.pdfPath, invoice.reportPdfPath])
           .filter((path): path is string => Boolean(path));
 
         set((state) => ({
@@ -415,12 +445,13 @@ export const useAppStore = create<AppState>()(
       },
 
       deleteInvoice: (id) => {
-        const pdfPath = get().invoices.find((invoice) => invoice.id === id)?.pdfPath;
+        const paths = get().invoices.find((invoice) => invoice.id === id);
         set((state) => ({
           invoices: state.invoices.filter((i) => i.id !== id),
           pendingDeletes: mergePendingDeletes(state.pendingDeletes, { invoices: [id] }),
         }));
-        if (pdfPath) void InvoiceService.deletePDF(pdfPath);
+        if (paths?.pdfPath) void InvoiceService.deletePDF(paths.pdfPath);
+        if (paths?.reportPdfPath) void InvoiceService.deletePDF(paths.reportPdfPath);
         void get().sync();
       },
 
@@ -469,9 +500,49 @@ export const useAppStore = create<AppState>()(
       deleteCalculation: (id) => {
         set((state) => ({
           calculations: state.calculations.filter((c) => c.id !== id),
+          invoices: state.invoices.map((invoice) => invoice.calculationIds?.includes(id)
+            ? { ...invoice, calculationIds: invoice.calculationIds.filter((selectedId) => selectedId !== id), updatedAt: new Date().toISOString(), synced: false }
+            : invoice),
           pendingDeletes: mergePendingDeletes(state.pendingDeletes, { calculations: [id] }),
         }));
         void get().sync();
+      },
+
+      assignCalculationToClient: (id, clientId) => {
+        if (clientId && !get().clients.some((client) => client.id === clientId)) return;
+        set((state) => ({
+          calculations: state.calculations.map((calc) => calc.id === id ? { ...calc, clientId, synced: false } : calc),
+          invoices: state.invoices.map((invoice) => invoice.calculationIds?.includes(id) && invoice.clientId !== clientId
+            ? { ...invoice, calculationIds: invoice.calculationIds.filter((selectedId) => selectedId !== id), updatedAt: new Date().toISOString(), synced: false }
+            : invoice),
+        }));
+      },
+
+      saveJobTemplate: (name, invoice) => {
+        if (!get().isPro || !name.trim()) return;
+        const template: JobTemplate = {
+          id: `template_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+          name: name.trim(),
+          lineItems: invoice.lineItems.map(({ description, quantity }) => ({ description, quantity })),
+          notes: invoice.notes,
+          createdAt: new Date().toISOString(),
+        };
+        set((state) => ({ jobTemplates: [...state.jobTemplates, template] }));
+      },
+
+      deleteJobTemplate: (id) => set((state) => ({ jobTemplates: state.jobTemplates.filter((item) => item.id !== id) })),
+
+      restoreLocalRecords: async (records) => {
+        const current = get();
+        await appStorage.setItem(APP_STORAGE_NAME, JSON.stringify({ version: 3, state: {
+          ...records,
+          themeMode: current.themeMode,
+          isPro: current.isPro,
+          proLastVerifiedAt: current.proLastVerifiedAt,
+        } }));
+        const oldPaths = get().invoices.flatMap((invoice) => [invoice.pdfPath, invoice.reportPdfPath]).filter((path): path is string => Boolean(path));
+        set({ ...records, pendingDeletes: emptyPendingDeletes() });
+        oldPaths.forEach((path) => void InvoiceService.deletePDF(path));
       },
 
       // ─── Company Actions ───
@@ -501,7 +572,7 @@ export const useAppStore = create<AppState>()(
 
       deleteAllLocalData: async () => {
         const pdfPaths = get().invoices
-          .map((invoice) => invoice.pdfPath)
+          .flatMap((invoice) => [invoice.pdfPath, invoice.reportPdfPath])
           .filter((path): path is string => Boolean(path));
         let complete = true;
 
@@ -530,6 +601,7 @@ export const useAppStore = create<AppState>()(
           clients: [],
           invoices: [],
           calculations: [],
+          jobTemplates: [],
           company: defaultCompanySettings(),
           pendingDeletes: emptyPendingDeletes(),
         });
@@ -573,6 +645,7 @@ export const useAppStore = create<AppState>()(
         clients: state.clients,
         invoices: state.invoices,
         calculations: state.calculations,
+        jobTemplates: state.jobTemplates,
         themeMode: state.themeMode,
         company: state.company,
         isPro: state.isPro,

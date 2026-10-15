@@ -370,6 +370,38 @@ const EXPANSION_COEFFICIENT: Record<PipeMaterial, number> = {
 // ─── Calculator Engine ───────────────────────────────────────────────
 
 export const PlumbingEngine = {
+  pipeFillTime(inputs: { pipeSize: string; length: number; gpm: number; material?: PipeMaterial }): MetricResult {
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Pipe fill time');
+    const volume = this.pipeVolume({ pipeSize: inputs.pipeSize, length: inputs.length, material: inputs.material });
+    const flowError = validatePositive(inputs.gpm, 'Fill flow');
+    if (!volume.ok || flowError) return { ok: false, message: [volume.ok ? null : volume.message, flowError].filter(Boolean).join('; '), fields: [], details: [] };
+    const pipe = nominalToPipeSize(inputs.pipeSize, inputs.material ?? 'copper');
+    if (!pipe) return { ok: false, message: 'Unsupported pipe size', fields: [], details: [] };
+    const gallons = Math.PI * (pipe.id / 2) ** 2 * inputs.length * 7.48 / 144;
+    const minutes = gallons / inputs.gpm;
+    const resultError = validateFiniteResult([gallons, minutes], 'Pipe fill time result');
+    if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
+    return { ok: true, message: `Estimated fill time ≈ ${fmt(minutes, 1)} min`, fields: [
+      { label: 'Fill time', value: fmt(minutes, 1), unit: 'min', emphasis: true },
+      { label: 'Pipe volume', value: fmt(gallons, 1), unit: 'gal' },
+      { label: 'Fill flow', value: fmt(inputs.gpm, 1), unit: 'GPM' },
+    ], details: [`Pipe volume = π × (${fmt(pipe.id, 3)} in ÷ 2)² × ${fmt(inputs.length, 1)} ft × 7.48 ÷ 144 = ${fmt(gallons, 1)} gal`, `Fill time = ${fmt(gallons, 1)} gal ÷ ${fmt(inputs.gpm, 1)} GPM = ${fmt(minutes, 1)} min`, 'Assumes constant flow and an empty pipe. Purging air may add time.'] };
+  },
+
+  drainFall(inputs: { length: number; slope: DrainSlope }): MetricResult {
+    if (!isInputRecord(inputs)) return invalidMetricInputs('Drain fall');
+    const lengthError = validatePositive(inputs.length, 'Run length');
+    if (lengthError || !DRAIN_SLOPE_OPTIONS.includes(inputs.slope)) return { ok: false, message: lengthError ?? 'Choose a supported slope.', fields: [], details: [] };
+    const inchPerFoot = inputs.slope === '1/8' ? 0.125 : inputs.slope === '1/4' ? 0.25 : 0.5;
+    const inches = inputs.length * inchPerFoot;
+    const resultError = validateFiniteResult([inches], 'Drain fall result');
+    if (resultError) return { ok: false, message: resultError, fields: [], details: [] };
+    return { ok: true, message: `Required fall ≈ ${fmt(inches, 2)} in`, fields: [
+      { label: 'Fall', value: fmt(inches, 2), unit: 'in', emphasis: true },
+      { label: 'Run', value: fmt(inputs.length, 1), unit: 'ft' },
+      { label: 'Slope', value: `${inputs.slope} in/ft` },
+    ], details: [`Fall = ${fmt(inputs.length, 1)} ft × ${inputs.slope} in/ft = ${fmt(inches, 2)} in`, 'Confirm the selected slope is permitted for the pipe and local code.'] };
+  },
   pipeVelocity(inputs: { gpm: number; pipeSize: string; material?: PipeMaterial }): MetricResult {
     if (!isInputRecord(inputs)) return invalidMetricInputs('Pipe velocity');
     const materialInput: unknown = inputs.material ?? 'copper';
