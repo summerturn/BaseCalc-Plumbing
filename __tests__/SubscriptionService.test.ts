@@ -39,13 +39,29 @@ jest.mock('react-native-purchases', () => ({
 }));
 
 import Purchases, {
+  type CustomerInfo,
   type PurchasesOfferings,
   type PurchasesPackage,
   type PurchasesStoreProduct,
 } from 'react-native-purchases';
+import { isRevenueCatConfigured } from '../src/lib/config';
 import { SubscriptionService } from '../src/services/SubscriptionService';
 
 const purchasesMock = jest.mocked(Purchases);
+const revenueCatConfiguredMock = jest.mocked(isRevenueCatConfigured);
+
+function expectRestoreDoesNotPurchase(): void {
+  expect(purchasesMock.purchasePackage).not.toHaveBeenCalled();
+  expect(purchasesMock.purchaseStoreProduct).not.toHaveBeenCalled();
+}
+
+function customerInfo(activeEntitlements: Record<string, { isActive: boolean; productIdentifier?: string; willRenew?: boolean }>): CustomerInfo {
+  return {
+    entitlements: {
+      active: activeEntitlements,
+    },
+  } as unknown as CustomerInfo;
+}
 
 function product(identifier: string): PurchasesStoreProduct {
   return { identifier, priceString: '$7.00' } as PurchasesStoreProduct;
@@ -54,6 +70,56 @@ function product(identifier: string): PurchasesStoreProduct {
 describe('SubscriptionService storefront validation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    revenueCatConfiguredMock.mockReturnValue(true);
+  });
+
+  test('fails closed on cold start without a platform store key and does not call RevenueCat', async () => {
+    revenueCatConfiguredMock.mockReturnValue(false);
+
+    await expect(SubscriptionService.restorePurchases())
+      .rejects.toThrow('Store checkout is not available in this build.');
+
+    expect(purchasesMock.configure).not.toHaveBeenCalled();
+    expect(purchasesMock.restorePurchases).not.toHaveBeenCalled();
+    expectRestoreDoesNotPurchase();
+  });
+
+  test('restores lifetime ownership when RevenueCat returns the active Pro entitlement', async () => {
+    purchasesMock.restorePurchases.mockResolvedValueOnce(
+      customerInfo({ pro: { isActive: true, productIdentifier: 'basecalc_plumbing_pro_lifetime', willRenew: false } })
+    );
+
+    await expect(SubscriptionService.restorePurchases()).resolves.toBe(true);
+
+    expect(purchasesMock.restorePurchases).toHaveBeenCalledTimes(1);
+    expectRestoreDoesNotPurchase();
+  });
+
+  test('restores an active legacy subscription through the shared Pro entitlement', async () => {
+    purchasesMock.restorePurchases.mockResolvedValueOnce(
+      customerInfo({ pro: { isActive: true, productIdentifier: 'basecalc_plumbing_pro_monthly', willRenew: true } })
+    );
+
+    await expect(SubscriptionService.restorePurchases()).resolves.toBe(true);
+    expectRestoreDoesNotPurchase();
+  });
+
+  test.each([
+    ['no active entitlements', customerInfo({})],
+    ['inactive Pro entitlement', customerInfo({ pro: { isActive: false } })],
+  ])('does not grant Pro for %s', async (_label, restoredInfo) => {
+    purchasesMock.restorePurchases.mockResolvedValueOnce(restoredInfo);
+
+    await expect(SubscriptionService.restorePurchases()).resolves.toBe(false);
+    expectRestoreDoesNotPurchase();
+  });
+
+  test('propagates a store SDK failure so the paywall can report restore failure', async () => {
+    const sdkError = new Error('Store service unavailable');
+    purchasesMock.restorePurchases.mockRejectedValueOnce(sdkError);
+
+    await expect(SubscriptionService.restorePurchases()).rejects.toBe(sdkError);
+    expectRestoreDoesNotPurchase();
   });
 
   test('ignores legacy package slots whose products do not match configured SKUs', async () => {
