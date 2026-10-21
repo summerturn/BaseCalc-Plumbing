@@ -1,7 +1,7 @@
 const baseExpoConfig = {
   name: 'BaseCalc Plumbing',
   slug: 'basecalc-plumbing',
-  version: '1.0.0',
+  version: '1.0.2',
   orientation: 'portrait',
   icon: './assets/icon.png',
   newArchEnabled: true,
@@ -9,6 +9,7 @@ const baseExpoConfig = {
   assetBundlePatterns: ['**/*'],
   ios: {
     supportsTablet: true,
+    buildNumber: '15',
     bundleIdentifier: 'com.basemapped.basecalcplumbing',
     config: {
       usesNonExemptEncryption: false,
@@ -47,6 +48,7 @@ const baseExpoConfig = {
     ],
     'expo-font',
     'expo-sharing',
+    ['expo-build-properties', { ios: { enableSceneSupport: true } }],
     './plugins/withAndroidLaunchMode',
   ],
   owner: 'basemapped-llc',

@@ -39,10 +39,10 @@ import {
   SCREEN_TOP_PAD,
   Screen,
   Segmented,
-  TABLET_BREAKPOINT,
   useBottomClearance,
   withAlpha,
 } from '../components/ui';
+import { getDashboardColumns } from '../lib/dashboardLayout';
 import { isPremiumCalculatorRoute } from '../lib/accessControl';
 
 type IconName = ComponentProps<typeof MaterialIcons>['name'];
@@ -274,12 +274,11 @@ export function CalculatorDashboardScreen({ navigation }: { navigation: { naviga
   const { isPro } = useAppStore();
   const { width, height, fontScale } = useWindowDimensions();
   const bottomClearance = useBottomClearance();
-  const isTablet = width >= TABLET_BREAKPOINT;
   const wideCards = width >= 600;
   const compact = width < 500;
   const shortViewport = height < 760;
-  const columns = fontScale >= 1.6 ? 1 : width >= 1180 ? 4 : isTablet ? 3 : 2;
   const cardGap = compact ? 12 : 14;
+  const columns = getDashboardColumns(width, fontScale, SCREEN_H_PAD, cardGap);
   const availableGridWidth = Math.max(0, width - SCREEN_H_PAD * 2);
   const cardWidth = Math.floor(
     (availableGridWidth - cardGap * (columns - 1)) / columns
